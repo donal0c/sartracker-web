@@ -16,7 +16,7 @@ function row(overrides: Partial<DeviceWorkspaceRow>): DeviceWorkspaceRow {
     deviceId: '1', name: 'Aoife', status: 'online', hidden: false, hasFix: true, latitude: 52, longitude: -9.7,
     dataOrigin: 'live', lastSeen: '2026-11-06T11:58:00.000Z', lastSeenDisplay: '', fixTimeDisplay: '', fixTime: '2026-11-06T11:58:00.000Z', sourceDisplay: 'Live',
     fixTimeUnverified: false, ingestWarning: null, stale: false, accuracyDisplay: '', batteryDisplay: '', speedDisplay: '',
-    stationaryAttention: false, stationaryAttentionUnavailable: false, stationaryAttentionUnreliable: false,
+    stationaryAttention: false, stationaryAttentionUnreliable: false,
     attentionAcknowledged: false, attentionElapsedDisplay: '', reportedStatus: 'online', currentUnconfirmed: false, ...overrides,
   }
 }

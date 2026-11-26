@@ -1,6 +1,6 @@
 import { sourceProvenance, type DeviceWorkspaceRow } from '../tracking/device-workspace-model'
 
-export type PersonTone = 'ok' | 'attention' | 'muted'
+export type PersonTone = 'ok' | 'attention'
 
 export type PersonRow = {
   readonly deviceId: string
@@ -84,7 +84,7 @@ function describePerson(row: DeviceWorkspaceRow, nowMs: number, { live, lastConf
     const urgency = row.stationaryAttention ? (row.attentionAcknowledged ? 1 : 0) : ownProblem ? 2 : SHARED_OUTAGE_URGENCY
     return { statusText: notes.join(' · '), tone: 'attention', urgency, onlyPaused: paused && !live && urgency === SHARED_OUTAGE_URGENCY }
   }
-  return { statusText: `Position ${age}`, tone: row.stationaryAttentionUnavailable ? 'muted' : 'ok', urgency: NO_PROBLEM_URGENCY, onlyPaused: false }
+  return { statusText: `Position ${age}`, tone: 'ok', urgency: NO_PROBLEM_URGENCY, onlyPaused: false }
 }
 
 /**

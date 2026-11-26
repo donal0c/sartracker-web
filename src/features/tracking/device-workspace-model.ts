@@ -31,7 +31,6 @@ export type DeviceWorkspaceRow = {
   readonly batteryDisplay: string
   readonly speedDisplay: string
   readonly stationaryAttention: boolean
-  readonly stationaryAttentionUnavailable: boolean
   readonly stationaryAttentionUnreliable: boolean
   readonly attentionAcknowledged: boolean
   readonly attentionElapsedDisplay: string
@@ -115,7 +114,6 @@ export function buildDeviceWorkspaceRows(
         speedDisplay:
           typeof position?.speed === 'number' ? `${position.speed.toFixed(1)} km/h` : '—',
         stationaryAttention: attention?.state === 'attention',
-        stationaryAttentionUnavailable: attention?.state === 'insufficient-data',
         stationaryAttentionUnreliable: attention?.latestFixUnreliable === true,
         attentionAcknowledged: attention?.acknowledged === true,
         attentionElapsedDisplay: formatAttentionElapsed(attention?.elapsedMs),

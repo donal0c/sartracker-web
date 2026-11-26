@@ -1,0 +1,85 @@
+import { beforeEach, describe, expect, it } from 'vitest'
+
+import { useStationaryAttentionStore } from '../../src/features/tracking/stationary-attention-store'
+import { buildDeviceWorkspaceRows } from '../../src/features/tracking/device-workspace-model'
+import type { NormalizedTrackingPosition, TrackingConnectionStatus, TrackingSnapshot } from '../../src/features/tracking/tracking-types'
+import { describeTrackingHeadline } from '../../src/features/workspace/tracking-headline'
+
+const base = {
+  positions: [], ingestRejected: 0, evidenceState: 'healthy', evidenceLossAcknowledged: false, conflictCount: 0,
+  stationaryCount: 0, notedCount: 0, coverageStatus: 'complete', hiddenLocationCount: 0, allLocationsHidden: false,
+  mapUpdateFailed: false,
+}
+const online: TrackingConnectionStatus = { mode: 'online', consecutiveFailures: 0, recovered: false, lastSuccessAt: null, warning: null }
+
+describe('the tracking line says once when not-moving warnings are off [DON-384]', () => {
+  it('adds one plain line and one short word, and is not OK', () => {
+    const headline = describeTrackingHeadline({
+      ...base, phase: 'active', status: online,
+      stationaryCheckOff: { count: 2, causes: ['storage'] },
+    })
+    expect(headline.condition).toBe('attention')
+    expect(headline.tone).toBe('warning')
+    expect(headline.issues).toContain(
+      'Not-moving warnings are off for 2 people: their trail is not being recorded (cause: trail positions are not being saved)',
+    )
+    expect(headline.problems).toContain('2 not-moving off')
+  })
+
+  it('ranks the word with the person-safety words, ahead of connection and history', () => {
+    const headline = describeTrackingHeadline({
+      ...base, phase: 'active',
+      status: { ...online, warning: 'BREADCRUMB HISTORY REFRESH FAILED — current fixes remain live; exact history will retry.', warningCodes: ['history_refresh_failed'] },
+      stationaryCheckOff: { count: 1, causes: ['history'] },
+    })
+    expect(headline.problems.indexOf('1 not-moving off')).toBeLessThan(headline.problems.indexOf('History failed'))
+  })
+
+  it('stays quiet when nobody is affected', () => {
+    const headline = describeTrackingHeadline({ ...base, phase: 'active', status: online, stationaryCheckOff: { count: 0, causes: [] } })
+    expect(headline.condition).toBe('ok')
+    expect(headline.issues.join(' ')).not.toMatch(/Not-moving warnings are off/)
+  })
+})
+
+describe('the not-moving check clock in the stationary store [DON-384]', () => {
+  beforeEach(() => useStationaryAttentionStore.setState(useStationaryAttentionStore.getInitialState()))
+
+  it('records when a person with one position went off, and not a person with none', () => {
+    const before = Date.now()
+    useStationaryAttentionStore.getState().applySnapshot(snapshot([fix('one', 'a', 0)], ['one', 'none']), 'mission-1')
+    const since = useStationaryAttentionStore.getState().checkOffSinceByDevice
+    expect(Object.keys(since)).toEqual(['one'])
+    expect(since.one).toBeGreaterThanOrEqual(before)
+  })
+
+  it('clears once a second position is on record, and on a new mission', () => {
+    useStationaryAttentionStore.getState().applySnapshot(snapshot([fix('one', 'a', 0)], ['one']), 'mission-1')
+    useStationaryAttentionStore.getState().applySnapshot(snapshot([fix('one', 'a', 0)], ['one']), 'mission-2')
+    expect(Object.keys(useStationaryAttentionStore.getState().checkOffSinceByDevice)).toEqual(['one'])
+    useStationaryAttentionStore.getState().applySnapshot(snapshot([fix('one', 'a', 0), fix('one', 'b', 1)], ['one']), 'mission-2')
+    expect(useStationaryAttentionStore.getState().checkOffSinceByDevice).toEqual({})
+  })
+})
+
+describe('no per-row "check unavailable" text [DON-384]', () => {
+  it('drops the per-row flag from the device rows', () => {
+    const rows = buildDeviceWorkspaceRows(snapshot([fix('one', 'a', 0)], ['one']), [], undefined, {
+      one: { state: 'insufficient-data', acknowledged: false },
+    })
+    expect(rows[0]).not.toHaveProperty('stationaryAttentionUnavailable')
+  })
+})
+
+function snapshot(fixes: readonly NormalizedTrackingPosition[], deviceIds: readonly string[]): TrackingSnapshot {
+  const latest = new Map(fixes.map((entry) => [entry.device_id, entry]))
+  return {
+    devices: deviceIds.map((device_id) => ({ device_id, name: device_id, status: 'online', last_seen: null, unique_id: null, category: null })),
+    positions: [...latest.values()],
+    breadcrumbs: fixes,
+  }
+}
+
+function fix(deviceId: string, id: string, minutes: number): NormalizedTrackingPosition {
+  return { id, device_id: deviceId, lat: 52, lon: -9.7, altitude: null, speed: null, battery: null, accuracy: 4, timestamp: new Date(Date.parse('2026-11-26T10:00:00.000Z') + minutes * 60_000).toISOString(), timestamp_source: 'fix', source: 'osmand', data_origin: 'live', cache_age_seconds: null, device_cache_stale: false }
+}

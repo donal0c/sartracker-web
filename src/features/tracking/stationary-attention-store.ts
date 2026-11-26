@@ -7,6 +7,7 @@ import {
   type StationaryAttentionEvaluation,
 } from './stationary-attention'
 import { createStationaryAttentionProjector } from './stationary-attention-projection'
+import { trackStationaryCheckOffSince } from './stationary-check-off'
 import type { TrackingSnapshot } from './tracking-types'
 
 export type DeviceStationaryAttention = StationaryAttentionEvaluation & {
@@ -16,6 +17,11 @@ export type DeviceStationaryAttention = StationaryAttentionEvaluation & {
 export type StationaryAttentionStore = {
   readonly missionId: string | null
   readonly byDevice: Readonly<Record<string, DeviceStationaryAttention>>
+  /**
+   * When each person with a current position had their not-moving check go
+   * off for lack of positions on record (epoch ms) [DON-384].
+   */
+  readonly checkOffSinceByDevice: Readonly<Record<string, number>>
   readonly config: StationaryAttentionConfig
   readonly applySnapshot: (
     snapshot: TrackingSnapshot,
@@ -31,6 +37,7 @@ const stationaryAttentionProjector = createStationaryAttentionProjector()
 export const useStationaryAttentionStore = create<StationaryAttentionStore>((set, get) => ({
   missionId: null,
   byDevice: {},
+  checkOffSinceByDevice: {},
   config: DEFAULT_STATIONARY_ATTENTION_CONFIG,
   applySnapshot: (snapshot, suppliedMissionId, activeDeviceIds) => {
     const current = get()
@@ -44,7 +51,8 @@ export const useStationaryAttentionStore = create<StationaryAttentionStore>((set
     if (Object.keys(current.byDevice).length > 0 && evidenceIsIdentical) {
       return
     }
-    const previous = missionId === get().missionId ? get().byDevice : {}
+    const sameMission = missionId === get().missionId
+    const previous = sameMission ? get().byDevice : {}
     const evaluations = stationaryAttentionProjector.project(
       snapshot,
       current.config,
@@ -67,7 +75,13 @@ export const useStationaryAttentionStore = create<StationaryAttentionStore>((set
             : false,
       }
     }
-    set({ missionId, byDevice })
+    const checkOffSinceByDevice = trackStationaryCheckOffSince(
+      sameMission ? current.checkOffSinceByDevice : {},
+      byDevice,
+      snapshot.positions,
+      Date.now(),
+    )
+    set({ missionId, byDevice, checkOffSinceByDevice })
   },
   acknowledge: (deviceId) => set((state) => {
     const current = state.byDevice[deviceId]

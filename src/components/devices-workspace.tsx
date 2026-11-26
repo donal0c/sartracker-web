@@ -571,13 +571,6 @@ function DeviceRow(props: {
             {props.row.attentionAcknowledged ? 'Attention Acknowledged' : 'Stationary Attention'}
             {props.row.stationaryAttentionUnreliable ? ' — latest fix uncorroborated' : ''}
           </p>
-        ) : props.row.stationaryAttentionUnavailable ? (
-          <p
-            className="mt-1 truncate text-[10px] font-semibold uppercase tracking-wide text-stone-400"
-            data-testid={`device-attention-unavailable-${props.row.deviceId}`}
-          >
-            Stationary check unavailable
-          </p>
         ) : null}
         {props.row.ingestWarning === null ? null : (
           <p

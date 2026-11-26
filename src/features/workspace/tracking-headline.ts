@@ -1,4 +1,4 @@
-import { useMemo } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 
 import { useLayerVisibilityStore } from '../layers/layer-visibility-store'
 import { useMissionStore, type MissionRuntimePhase } from '../mission/mission-store'
@@ -9,6 +9,12 @@ import { useIngestHealthStore } from '../tracking/ingest-health-store'
 import { selectCoverageStateForMission } from '../tracking/mission-coverage-scope'
 import { describeTrackingHealth } from '../tracking/persistent-tracking-health'
 import { useStationaryAttentionStore } from '../tracking/stationary-attention-store'
+import {
+  STATIONARY_CHECK_OFF_GRACE_MS,
+  describeStationaryCheckOff,
+  summarizeStationaryCheckOff,
+  type StationaryCheckOffSummary,
+} from '../tracking/stationary-check-off'
 import { useTrackingStore } from '../tracking/tracking-store'
 import { useTrackingMapUpdateStore } from '../tracking/tracking-map-update-store'
 import { isCriticalTrackingTrustWarning } from '../tracking/tracking-trust-warning'
@@ -140,6 +146,8 @@ function decideTrackingHeadline(input: {
   readonly conflictCount: number
   readonly stationaryCount: number
   readonly notedCount: number
+  /** People whose not-moving warning is off because their trail is not being recorded [DON-384]. */
+  readonly stationaryCheckOff?: StationaryCheckOffSummary
   readonly coverageStatus: string
   readonly hiddenLocationCount: number
   readonly allLocationsHidden: boolean
@@ -162,6 +170,10 @@ function decideTrackingHeadline(input: {
   if (shown.warning !== null) issues.push(shown.warning)
   if (stationaryCount > 0) issues.push(`${stationaryCount} ${stationaryCount === 1 ? 'person' : 'people'} not moving`)
   if (notedCount > 0) issues.push(`${notedCount} ${notedCount === 1 ? 'person' : 'people'} not moving (noted)`)
+  // Said once here, never per row: a warning that cannot fire must not look like "nobody is still" [DON-384].
+  const checkOffCount = input.stationaryCheckOff?.count ?? 0
+  const checkOffLine = input.stationaryCheckOff === undefined ? null : describeStationaryCheckOff(input.stationaryCheckOff)
+  if (checkOffLine !== null) issues.push(checkOffLine)
   if (staleCount > 0) issues.push(`${staleCount} ${staleCount === 1 ? 'position' : 'positions'} out of date`)
   if (unverifiedCount > 0) issues.push(`${unverifiedCount} position ${unverifiedCount === 1 ? 'time' : 'times'} not verified`)
   if (input.ingestRejected > 0) issues.push(`${input.ingestRejected} position ${input.ingestRejected === 1 ? 'report' : 'reports'} rejected`)
@@ -185,6 +197,7 @@ function decideTrackingHeadline(input: {
   }
   if (staleCount > 0) name(`${staleCount} stale`, PROBLEM_RANK.stale)
   if (stationaryCount > 0) name(`${stationaryCount} not moving`, PROBLEM_RANK.notMoving)
+  if (checkOffCount > 0) name(`${checkOffCount} not-moving off`, PROBLEM_RANK.notMovingOff)
   if (input.ingestRejected > 0) name(`${input.ingestRejected} rejected`, PROBLEM_RANK.rejected)
   if (input.conflictCount > 0) name(`${input.conflictCount} conflicting`, PROBLEM_RANK.conflicting)
   if (unverifiedCount > 0) name(`${unverifiedCount} ${unverifiedCount === 1 ? 'time' : 'times'} unverified`, PROBLEM_RANK.unverified)
@@ -314,11 +327,48 @@ export function useTrackingHeadline(): TrackingHeadline {
   const allLocationsHidden = useLayerVisibilityStore((state) => !state.groupVisibility.tracking)
   const coverage = selectCoverageStateForMission(useCoverageStore((state) => state.state), missionId)
   const mapUpdateFailed = useTrackingMapUpdateStore((state) => state.failure !== null)
+  const checkOffSinceByDevice = useStationaryAttentionStore((state) => state.checkOffSinceByDevice)
+  const nowMs = useCheckOffClock(checkOffSinceByDevice)
+  // Only a running or paused mission relies on the warning; before one starts no trail is recorded.
+  const missionRunning = phase === 'active' || phase === 'paused'
+  const stationaryCheckOff = useMemo(() => missionRunning
+    ? summarizeStationaryCheckOff({
+        sinceByDevice: checkOffSinceByDevice, positions, nowMs, warningCodes: status.warningCodes,
+        evidenceState: evidence.state, coverageStatus: coverage.status,
+      })
+    : { count: 0, causes: [] },
+  [checkOffSinceByDevice, coverage.status, evidence.state, missionRunning, nowMs, positions, status.warningCodes])
 
   return useMemo(() => describeTrackingHeadline({
     status, phase, positions, ingestRejected: ingest.totalRejected, evidenceState: evidence.state,
     evidenceLossAcknowledged: evidence.acknowledgedLoss !== undefined, conflictCount: evidence.conflictCount,
-    stationaryCount, notedCount, coverageStatus: coverage.status, hiddenLocationCount, allLocationsHidden, mapUpdateFailed,
+    stationaryCount, notedCount, stationaryCheckOff, coverageStatus: coverage.status, hiddenLocationCount, allLocationsHidden, mapUpdateFailed,
   }),
-  [allLocationsHidden, mapUpdateFailed, coverage.status, evidence.acknowledgedLoss, evidence.conflictCount, evidence.state, hiddenLocationCount, ingest.totalRejected, notedCount, phase, positions, stationaryCount, status])
+  [allLocationsHidden, mapUpdateFailed, coverage.status, evidence.acknowledgedLoss, evidence.conflictCount, evidence.state, hiddenLocationCount, ingest.totalRejected, notedCount, phase, positions, stationaryCheckOff, stationaryCount, status])
+}
+
+/**
+ * The time used to judge the not-moving grace period. It ticks only while
+ * someone's check is off and not yet due, so the line appears on time even
+ * when no new tracking update arrives [DON-384].
+ *
+ * @param sinceByDevice when each person's check went off
+ * @returns the current time in epoch ms
+ */
+function useCheckOffClock(sinceByDevice: Readonly<Record<string, number>>): number {
+  const [nowMs, setNowMs] = useState(() => Date.now())
+  useEffect(() => {
+    // Wake once the next person not yet counted by the held time is due; a
+    // person already due by the real clock is caught up on the next tick.
+    const pending = Object.values(sinceByDevice)
+      .map((since) => since + STATIONARY_CHECK_OFF_GRACE_MS)
+      .filter((due) => due > nowMs)
+    if (pending.length === 0) return undefined
+    const timer = setTimeout(
+      () => setNowMs(Date.now()),
+      Math.max(0, Math.min(...pending) - Date.now()) + 50,
+    )
+    return () => clearTimeout(timer)
+  }, [sinceByDevice, nowMs])
+  return nowMs
 }

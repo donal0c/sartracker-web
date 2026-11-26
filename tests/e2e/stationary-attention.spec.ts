@@ -84,6 +84,40 @@ test.describe('Stationary attention [DON-269]', () => {
   })
 })
 
+test.describe('Not-moving warnings off [DON-384]', () => {
+  test('says once on the tracking line when someone with a position has no trail recorded, never per row', async ({ page }) => {
+    await page.clock.install({ time: new Date('2026-11-26T10:00:00Z') })
+    await page.goto('/?missionHarness=1')
+    await expect(page.getByTestId('app-title')).toContainText('SAR Tracker')
+    await page.waitForSelector('canvas', { timeout: 15_000 })
+    await openMissionPanel(page)
+    await page.getByTestId('mission-name-input').fill('Not Moving Off')
+    await page.getByTestId('mission-start-btn').click()
+    // One current position and no recorded trail: the check has too little to work with.
+    await page.evaluate(async () => {
+      const now = new Date().toISOString()
+      const latest = { id: 'only', device_id: 'alpha', lat: 52, lon: -9.7, timestamp: now, altitude: null, speed: null, battery: null, accuracy: 4, source: 'osmand', data_origin: 'live' as const, cache_age_seconds: null, device_cache_stale: false }
+      await window.__SARTRACKER_BROWSER_HARNESS__?.injectTrackingSnapshot({
+        devices: [{ device_id: 'alpha', name: 'Alpha Team', status: 'online', last_seen: now, unique_id: null, category: 'person' }],
+        positions: [latest], breadcrumbs: [],
+      })
+    })
+    const headline = page.getByTestId('ws-tracking-headline')
+    // A phone's second position arrives well inside two minutes, so nothing is said yet.
+    await expect(headline).not.toContainText('not-moving off')
+    await page.clock.fastForward('02:05')
+    await expect(headline).toContainText('1 not-moving off')
+    await openWorkspacePanel(page, 'tracking')
+    await expect(page.getByTestId('ws-tracking-happened'))
+      .toContainText('Not-moving warnings are off for 1 person: their trail is not being recorded')
+    await page.screenshot({ path: 'output/don-384/not-moving-off-tracking.png' })
+    await openDevicesWorkspace(page)
+    await expect(page.getByTestId('device-row-alpha')).toBeVisible()
+    await expect(page.getByText('Stationary check unavailable', { exact: false })).toHaveCount(0)
+    await page.screenshot({ path: 'output/don-384/not-moving-off-devices.png' })
+  })
+})
+
 async function inject(page: import('@playwright/test').Page, firstLat: number, latestLat: number): Promise<void> {
   await page.evaluate(async ({ firstLat, latestLat }) => {
     const base = { device_id: 'alpha', lon: -9.7, altitude: null, speed: null, battery: null, accuracy: 4, source: 'osmand', data_origin: 'live' as const, cache_age_seconds: null, device_cache_stale: false }
