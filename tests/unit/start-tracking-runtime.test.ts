@@ -1324,8 +1324,33 @@ describe('startTrackingRuntime', () => {
       await stop.retryParticipantHistoryNow?.()
       await vi.waitFor(() => expect(getBreadcrumbsWithReport).toHaveBeenCalledTimes(1))
 
-      expect(await stop.retryParticipantHistoryNow?.()).toEqual({ kind: 'started', unfetchableDeviceCount: 0 })
+      // Try again lets the running fetch settle, then starts the next one at once.
+      const retry = stop.retryParticipantHistoryNow?.()
       failFirst(new Error('network down'))
+      expect(await retry).toEqual({ kind: 'started', unfetchableDeviceCount: 0 })
+
+      await vi.waitFor(() => expect(getBreadcrumbsWithReport).toHaveBeenCalledTimes(2), { timeout: 300 })
+      await stop()
+    })
+
+    it('starts the fetch from the read it reported on, so a later failing read cannot make "started" untrue', async () => {
+      let readsLeft = Number.POSITIVE_INFINITY
+      const listParticipantBackfillCheckpoints = vi.fn(async () => {
+        if (readsLeft <= 0) throw new Error('database is locked')
+        readsLeft -= 1
+        return [checkpoint]
+      })
+      const getBreadcrumbsWithReport = vi.fn()
+        .mockRejectedValueOnce(new Error('network down'))
+        .mockResolvedValue({ accepted: [], rejected: [] })
+      const stop = await startWithHistory({ getBreadcrumbsWithReport, listParticipantBackfillCheckpoints })
+      await stop.retryParticipantHistoryNow?.()
+      await vi.waitFor(() => expect(getBreadcrumbsWithReport).toHaveBeenCalledTimes(1))
+      await new Promise((resolve) => setTimeout(resolve, 50))
+
+      // Only Try again's own read succeeds; every later read fails.
+      readsLeft = 1
+      expect(await stop.retryParticipantHistoryNow?.()).toEqual({ kind: 'started', unfetchableDeviceCount: 0 })
 
       await vi.waitFor(() => expect(getBreadcrumbsWithReport).toHaveBeenCalledTimes(2), { timeout: 300 })
       await stop()

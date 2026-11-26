@@ -80,6 +80,8 @@ import {
 const PARTICIPANT_BACKFILL_MIN_WINDOW_MS = 5 * 60 * 1_000
 const PARTICIPANT_BACKFILL_MAX_RETRY_DELAY_MS = 30_000
 const PARTICIPANT_BACKFILL_GROWTH_SUCCESS_COUNT = 4
+/** Passes Try again waits out before it reads what is missing (DON-376). */
+const PARTICIPANT_HISTORY_RETRY_SETTLE_ROUNDS = 3
 
 /** Per-checkpoint retry state for participant backfill, kept in memory only. */
 type ParticipantBackfillRetryState = {
@@ -1415,17 +1417,26 @@ export async function startTrackingRuntime(
       return { kind: 'unavailable', reason: 'This version is not fetching earlier tracks. Tell your technical lead.' }
     }
     if (!hasBreadcrumbClient(client)) return PARTICIPANT_HISTORY_RETRY_NOT_CONNECTED
-    // Report "started" only when a fetch can really start.
-    let work: ParticipantBackfillWork | null
-    try {
-      work = await readParticipantBackfillWork()
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error)
-      logger.warn('Try again could not read participant history progress.', error)
-      return {
-        kind: 'unavailable',
-        reason: `SAR Tracker could not read which earlier tracks are still missing (${message}). Press Try again; restart SAR Tracker if this keeps happening.`,
+    // Report "started" only when a fetch really starts: let a running pass
+    // settle, read what is missing, and start the pass from that same read,
+    // so no second read can fail after "started" was promised.
+    let work: ParticipantBackfillWork | null = null
+    for (let round = 0; ; round += 1) {
+      for (let wait = 0; participantBackfillInFlight && participantBackfillTask !== null && wait < PARTICIPANT_HISTORY_RETRY_SETTLE_ROUNDS; wait += 1) {
+        await participantBackfillTask
       }
+      if (!acceptingRuntimeUpdates || participantBackfillAbortController.signal.aborted) return restarting
+      try {
+        work = await readParticipantBackfillWork()
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error)
+        logger.warn('Try again could not read participant history progress.', error)
+        return {
+          kind: 'unavailable',
+          reason: `SAR Tracker could not read which earlier tracks are still missing (${message}). Press Try again; restart SAR Tracker if this keeps happening.`,
+        }
+      }
+      if (!participantBackfillInFlight || round + 1 >= PARTICIPANT_HISTORY_RETRY_SETTLE_ROUNDS) break
     }
     if (!acceptingRuntimeUpdates || participantBackfillAbortController.signal.aborted) return restarting
     if (!hasBreadcrumbClient(client)) return PARTICIPANT_HISTORY_RETRY_NOT_CONNECTED
@@ -1443,9 +1454,11 @@ export async function startTrackingRuntime(
     }
     clearParticipantBackfillBackoff()
     if (participantBackfillInFlight) {
+      // Passes kept running back to back: one is fetching now, and the next
+      // starts without any backoff.
       participantBackfillRetryRequested = true
-    } else {
-      scheduleParticipantBackfill()
+    } else if (!scheduleParticipantBackfill(work)) {
+      return PARTICIPANT_HISTORY_RETRY_NOT_CONNECTED
     }
     void Promise.resolve().then(() => dependencies.recordDiagnosticEvent?.({
       level: 'info', category: 'tracking', event: 'participant_history_retry_requested',
@@ -1746,12 +1759,12 @@ export async function startTrackingRuntime(
    * mission's incomplete checkpoints, so one device whose history keeps
    * failing waits out its own backoff while the others keep moving [DON-338].
    */
-  function scheduleParticipantBackfill(): void {
+  function scheduleParticipantBackfill(preread?: ParticipantBackfillWork): boolean {
     if (participantBackfillInFlight) {
       // A wake-up (new snapshot, scope change) while a pass runs must not be
       // lost: that pass may have read the mission before the change.
       participantBackfillWakeRequested = true
-      return
+      return false
     }
     if (
       dependencies.missionModelEnabled !== true ||
@@ -1761,11 +1774,11 @@ export async function startTrackingRuntime(
       (dependencies.missionStore.persistTrackingPositionsBulk === undefined &&
         dependencies.missionStore.persistTrackingHistoryBatch === undefined) ||
       !hasBreadcrumbClient(client)
-    ) return
+    ) return false
 
     participantBackfillInFlight = true
     let result: ParticipantBackfillPassResult = { kind: 'idle' }
-    const task = runNextParticipantBackfillPass().then((passResult) => {
+    const task = runNextParticipantBackfillPass(preread).then((passResult) => {
       result = passResult
     }).catch((error) => {
       if (!participantBackfillAbortController.signal.aborted) {
@@ -1788,6 +1801,7 @@ export async function startTrackingRuntime(
       }
     })
     participantBackfillTask = task
+    return true
   }
 
   /** Wakes participant backfill when the earliest backed-off checkpoint may retry. */
@@ -1922,12 +1936,18 @@ export async function startTrackingRuntime(
     }
   }
 
-  async function runNextParticipantBackfillPass(): Promise<ParticipantBackfillPassResult> {
+  /**
+   * Runs one participant backfill pass. `preread` is the checkpoint read Try
+   * again already made, so the pass starts from it without reading again.
+   */
+  async function runNextParticipantBackfillPass(
+    preread?: ParticipantBackfillWork,
+  ): Promise<ParticipantBackfillPassResult> {
     // Participant backfill consumes only durability acknowledgement, never returned rows.
     const persistChunk = dependencies.missionStore.persistTrackingPositionsBulk
       ?? dependencies.missionStore.persistTrackingHistoryBatch
     if (!hasBreadcrumbClient(client) || persistChunk === undefined) return { kind: 'idle' }
-    const work = await readParticipantBackfillWork()
+    const work = preread ?? await readParticipantBackfillWork()
     if (work === null) return { kind: 'idle' }
     noteParticipantBackfillMissingDevices(work.missionId, work.missingDeviceIds)
     const incomplete = work.fetchable

@@ -23,6 +23,7 @@ import { useParticipantStore } from '../participants/participant-store'
 import { isMissionModelEnabled } from '../runtime/mission-model-flag'
 import { getAppRuntimeController } from '../runtime/app-runtime-controller'
 import type { ParticipantHistoryRetryOutcome } from '../tracking/participant-history-retry'
+import type { ParticipantBackfillCheckpoint } from '../../infrastructure/mission-store/tauri-mission-store'
 import {
   HISTORY_NOW_LOADED_NOTE,
   HISTORY_START_FRESH_REFUSAL,
@@ -152,25 +153,29 @@ export function useMissionControlViewModel(): MissionControlViewModel {
   // Only one Finish check runs at a time, so a second press cannot replace
   // the real refusal with a transient guard message.
   const finishInFlight = useRef(false)
-  // Each Finish attempt supersedes any Try again result still on its way.
-  const finishAttempt = useRef(0)
+  // Any newer mission message (a Finish attempt, a Pause or Resume failure)
+  // supersedes a Try again result still on its way.
+  const messageGeneration = useRef(0)
   const participantMissionId = useParticipantStore((state) => state.activeMissionId)
   const participantError = useParticipantStore((state) => state.error)
   const backfillCheckpoints = useParticipantStore((state) => state.backfillCheckpoints)
   /** Shows a mission action failure; any history refusal it replaces goes. */
   const setActionError = useCallback((message: string | null) => {
+    messageGeneration.current += 1
     setFinishBlock(null)
     setActionErrorState(message)
   }, [])
   const finishBlockActive = finishBlock !== null && currentMission?.id === finishBlock.missionId
-  const peopleStillLoading = finishBlockActive
-    ? countPeopleStillFetchingHistoryIfKnown(
-      { activeMissionId: participantMissionId, error: participantError, checkpoints: backfillCheckpoints },
-      finishBlock.missionId,
-    )
-    : null
-  const historyNowLoaded = finishBlockActive &&
-    (peopleStillLoading === 0 || (finishBlock.retryComplete && peopleStillLoading === null))
+  const peopleStillLoading = !finishBlockActive
+    ? null
+    : finishBlock.heldSnapshot !== null && backfillCheckpoints === finishBlock.heldSnapshot.checkpoints
+      // SQLite or tracking said otherwise after this list was published; wait for a newer one.
+      ? finishBlock.heldSnapshot.people
+      : countPeopleStillFetchingHistoryIfKnown(
+        { activeMissionId: participantMissionId, error: participantError, checkpoints: backfillCheckpoints },
+        finishBlock.missionId,
+      )
+  const historyNowLoaded = finishBlockActive && peopleStillLoading === 0
   const actionError = !finishBlockActive
     ? actionErrorState
     : historyNowLoaded
@@ -337,7 +342,7 @@ export function useMissionControlViewModel(): MissionControlViewModel {
 
     finishInFlight.current = true
     setFinishBusy(true)
-    finishAttempt.current += 1
+    messageGeneration.current += 1
     const missionId = currentMission?.id ?? null
     setActionError(null)
 
@@ -354,7 +359,19 @@ export function useMissionControlViewModel(): MissionControlViewModel {
       // The store's precise refusal is already in the main-process log; the
       // operator gets plain words and Try again.
       setActionErrorState(null)
-      setFinishBlock({ missionId, retryError: null, retryStarted: null, retryComplete: false })
+      // A published list that already shows everything loaded is older than
+      // this refusal: say "some people" until a newer list arrives.
+      const scope = useParticipantStore.getState()
+      const published = countPeopleStillFetchingHistoryIfKnown(
+        { activeMissionId: scope.activeMissionId, error: scope.error, checkpoints: scope.backfillCheckpoints },
+        missionId,
+      )
+      setFinishBlock({
+        missionId,
+        retryError: null,
+        retryStarted: null,
+        heldSnapshot: published === 0 ? { checkpoints: scope.backfillCheckpoints, people: null } : null,
+      })
     } finally {
       finishInFlight.current = false
       setFinishBusy(false)
@@ -370,7 +387,7 @@ export function useMissionControlViewModel(): MissionControlViewModel {
   async function retryHistoryFetch(): Promise<void> {
     if (!finishBlockActive || historyRetryBusy) return
     const block = finishBlock
-    const attempt = finishAttempt.current
+    const generation = messageGeneration.current
     setHistoryRetryBusy(true)
     let outcome: ParticipantHistoryRetryOutcome
     try {
@@ -384,7 +401,7 @@ export function useMissionControlViewModel(): MissionControlViewModel {
       setHistoryRetryBusy(false)
     }
     // A Finish pressed meanwhile owns the message now.
-    if (attempt !== finishAttempt.current) return
+    if (generation !== messageGeneration.current) return
     if (outcome.kind === 'started') {
       setFinishBlock({
         ...block,
@@ -392,7 +409,14 @@ export function useMissionControlViewModel(): MissionControlViewModel {
         retryStarted: { unfetchableDeviceCount: outcome.unfetchableDeviceCount },
       })
     } else if (outcome.kind === 'complete') {
-      setFinishBlock({ ...block, retryError: null, retryStarted: null, retryComplete: true })
+      // Tracking read the durable checkpoints just now; the published list
+      // may be older until the participant store refreshes.
+      setFinishBlock({
+        ...block,
+        retryError: null,
+        retryStarted: null,
+        heldSnapshot: { checkpoints: useParticipantStore.getState().backfillCheckpoints, people: 0 },
+      })
     } else {
       setFinishBlock({ ...block, retryError: outcome.reason, retryStarted: null })
     }
@@ -648,8 +672,14 @@ type FinishHistoryBlock = {
   readonly retryError: string | null
   /** Set once Try again really started a fetch. */
   readonly retryStarted: { readonly unfetchableDeviceCount: number } | null
-  /** Set when tracking found every earlier track already loaded. */
-  readonly retryComplete: boolean
+  /**
+   * A published checkpoint list known to be older than SQLite or tracking,
+   * and what to say while it is still the list on screen.
+   */
+  readonly heldSnapshot: {
+    readonly checkpoints: readonly ParticipantBackfillCheckpoint[]
+    readonly people: number | null
+  } | null
 }
 
 function toErrorMessage(error: unknown): string {
