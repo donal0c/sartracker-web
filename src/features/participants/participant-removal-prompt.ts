@@ -17,18 +17,19 @@ export type ParticipantRemovalPreview = {
   /** Devices recorded now that would no longer be recorded after removal. */
   readonly stopsTrackingCount: number
   /**
-   * True when the latest Traccar roster was read completely, so no group
-   * member can be missing from the count. False means the count may be low.
+   * True when the latest Traccar roster was read completely from a live poll
+   * and every membership change is saved, so no group member can be missing
+   * from the count. False means the count may be low.
    */
   readonly rosterConfirmed: boolean
 }
 
 /**
  * Lists the devices recorded at `at` that would stop being recorded if the
- * participant were removed at `at`. Returns null when the participant is not
- * an active row of this mission.
- * `observedCurrentFor` supplies the live group members the runtime adds to
- * the current scope, given the participant list and the team being removed.
+ * participant were removed at `at`. Uses the durable recording scope only:
+ * a group member seen on the live roster but not yet saved is drawn on the
+ * map but not recorded, so it neither counts nor keeps anyone covered.
+ * Returns null when the participant is not an active row of this mission.
  */
 export function devicesStoppingOnRemoval(input: {
   readonly participants: readonly MissionParticipant[]
@@ -36,10 +37,6 @@ export function devicesStoppingOnRemoval(input: {
   readonly backfillCheckpoints: readonly ParticipantBackfillCheckpoint[]
   readonly participantId: string
   readonly at: string
-  readonly observedCurrentFor: (
-    participants: readonly MissionParticipant[],
-    removedTeamId: string | null,
-  ) => readonly string[]
 }): readonly string[] | null {
   const target = input.participants.find((participant) => participant.id === input.participantId)
   if (target === undefined || target.removed_at !== null) return null
@@ -47,20 +44,26 @@ export function devicesStoppingOnRemoval(input: {
     participants: input.participants,
     membershipEvents: input.membershipEvents,
     backfillCheckpoints: input.backfillCheckpoints,
-    observedCurrentDeviceIds: input.observedCurrentFor(input.participants, null),
-  }).operationalDeviceIdsAt(input.at)
-  const afterParticipants = input.participants.map((participant) =>
-    participant.id === input.participantId ? { ...participant, removed_at: input.at } : participant)
+  }).activeDeviceIdsAt(input.at)
   const after = new Set(createParticipationScope({
-    participants: afterParticipants,
+    participants: input.participants.map((participant) =>
+      participant.id === input.participantId ? { ...participant, removed_at: input.at } : participant),
     membershipEvents: input.membershipEvents,
     backfillCheckpoints: input.backfillCheckpoints,
-    observedCurrentDeviceIds: input.observedCurrentFor(
-      afterParticipants,
-      target.kind === 'group' ? target.mission_team_id : null,
-    ),
-  }).operationalDeviceIdsAt(input.at))
+  }).activeDeviceIdsAt(input.at))
   return before.filter((deviceId) => !after.has(deviceId))
+}
+
+/**
+ * A preview is only confirmed while tracking is live: when polls fail the
+ * roster is the last good one replayed, so a group count may be out of date.
+ */
+export function previewWhileTracking(
+  preview: ParticipantRemovalPreview | null,
+  trackingOnline: boolean,
+): ParticipantRemovalPreview | null {
+  if (preview === null || trackingOnline) return preview
+  return { ...preview, rosterConfirmed: false }
 }
 
 /**

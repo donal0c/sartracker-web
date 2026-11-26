@@ -8,9 +8,10 @@ import {
   type ParticipantHistoryStart,
 } from '../features/participants/participant-history-start'
 import { useParticipantStore } from '../features/participants/participant-store'
+import { useTrackingStore } from '../features/tracking/tracking-store'
 import { useParticipantSelectionViewModel } from '../features/participants/use-participant-selection-view-model'
 import { LegacyRosterRecoveryForm } from '../features/participants/legacy-roster-recovery-form'
-import { removalPromptText } from '../features/participants/participant-removal-prompt'
+import { previewWhileTracking, removalPromptText } from '../features/participants/participant-removal-prompt'
 import { useSectionBodyOpen } from './section-body-open'
 import type { ParticipantProvenance } from '../infrastructure/mission-store/tauri-mission-store'
 
@@ -59,6 +60,8 @@ export function ParticipantControlsSection({ phase, lookbackRequested = false, v
   // Re-read on every runtime publish so the confirm's count stays current.
   useParticipantStore((state) => state.scope)
   const sectionBodyOpen = useSectionBodyOpen()
+  // A roster replayed from the last good poll while offline is not a confirmed count.
+  const trackingOnline = useTrackingStore((state) => state.status.mode === 'online')
   const keepButtonRef = useRef<HTMLButtonElement | null>(null)
   const returnFocusToRemoveId = useRef<string | null>(null)
   const removeButtons = useRef(new Map<string, HTMLButtonElement>())
@@ -84,7 +87,11 @@ export function ParticipantControlsSection({ phase, lookbackRequested = false, v
     }
     const returnId = returnFocusToRemoveId.current
     returnFocusToRemoveId.current = null
-    if (returnId !== null) removeButtons.current.get(returnId)?.focus()
+    if (returnId === null) return
+    const button = removeButtons.current.get(returnId)
+    // While a save disables Remove, focus its row instead of losing it.
+    if (button?.disabled === true) button.closest<HTMLElement>('[data-participant-kind]')?.focus()
+    else button?.focus()
   }, [confirmRemoveId])
 
   // Mission setup opening re-reads the Traccar groups, so a group created
@@ -294,6 +301,7 @@ export function ParticipantControlsSection({ phase, lookbackRequested = false, v
           <div
             className="sar-readout flex flex-wrap items-start justify-between gap-3 p-2"
             data-participant-kind={participant.kind}
+            tabIndex={-1}
             data-traccar-device-id={participant.traccar_device_id ?? undefined}
             key={participant.id}
           >
@@ -349,7 +357,7 @@ export function ParticipantControlsSection({ phase, lookbackRequested = false, v
                 role="group"
               >
                 <p className="text-xs font-semibold" id={`participant-remove-question-${participant.id}`}>
-                  {removalPromptText(label, participant.kind, controller?.previewRemoval(participant.id) ?? null)}
+                  {removalPromptText(label, participant.kind, previewWhileTracking(controller?.previewRemoval(participant.id) ?? null, trackingOnline))}
                 </p>
                 <div className="mt-2 flex gap-2">
                   <button

@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 
-import { removalPromptText } from '../../src/features/participants/participant-removal-prompt'
+import { previewWhileTracking, removalPromptText } from '../../src/features/participants/participant-removal-prompt'
 import { startParticipantRuntime } from '../../src/features/participants/start-participant-runtime'
 import type {
   GroupMembershipEvent,
@@ -37,7 +37,11 @@ function device(deviceId: string, groupId: string | null) {
   }
 }
 
-async function runtimeWith(participants: readonly MissionParticipant[], events: readonly GroupMembershipEvent[]) {
+async function runtimeWith(
+  participants: readonly MissionParticipant[],
+  events: readonly GroupMembershipEvent[],
+  options: { readonly membershipWriteFails?: boolean } = {},
+) {
   const store = {
     selectMissionParticipants: vi.fn().mockResolvedValue(participants),
     addMissionParticipant: vi.fn(),
@@ -45,9 +49,12 @@ async function runtimeWith(participants: readonly MissionParticipant[], events: 
     listMissionParticipants: vi.fn().mockResolvedValue(participants),
     recordGroupMembershipEvents: vi.fn().mockImplementation(async (input: {
       readonly events: readonly Omit<GroupMembershipEvent, 'id' | 'sequence' | 'mission_id'>[]
-    }) => input.events.map((event, index) => ({
-      ...event, id: `new-${index}`, sequence: events.length + index + 1, mission_id: 'mission-1',
-    }))),
+    }) => {
+      if (options.membershipWriteFails === true) throw new Error('disk full')
+      return input.events.map((event, index) => ({
+        ...event, id: `new-${index}`, sequence: events.length + index + 1, mission_id: 'mission-1',
+      }))
+    }),
     listGroupMembershipEvents: vi.fn().mockResolvedValue(events),
     listParticipantBackfillCheckpoints: vi.fn().mockResolvedValue([]),
   }
@@ -94,6 +101,13 @@ describe('Remove counts who would stop being recorded [DON-373]', () => {
     expect(runtime.previewRemoval('part-kmrt')?.rosterConfirmed).toBe(false)
   })
 
+  it('does not treat an unsaved group join as recording coverage, and marks the count unconfirmed', async () => {
+    const runtime = await runtimeWith([KMRT, ALICE], [member('d2', 1)], { membershipWriteFails: true })
+    // Alice joins KMRT on the live roster, but saving that membership fails.
+    await runtime.applyRoster([device('d1', 'group-kmrt'), device('d2', 'group-kmrt')], NOW).catch(() => undefined)
+    expect(runtime.previewRemoval('part-alice')).toEqual({ stopsTrackingCount: 1, rosterConfirmed: false })
+  })
+
   it('returns null for a row that is not an active participant', async () => {
     const runtime = await runtimeWith([KMRT], [member('d1', 1)])
     expect(runtime.previewRemoval('no-such-row')).toBeNull()
@@ -115,6 +129,14 @@ describe('removal question wording [DON-373]', () => {
       .toBe('Stop tracking KMRT (number of people not known)? Their positions stop being recorded.')
     expect(removalPromptText('KMRT', 'group', null))
       .toBe('Stop tracking KMRT (number of people not known)? Their positions stop being recorded.')
+  })
+
+  it('never presents a count as confirmed while tracking is offline', () => {
+    expect(previewWhileTracking({ stopsTrackingCount: 3, rosterConfirmed: true }, false))
+      .toEqual({ stopsTrackingCount: 3, rosterConfirmed: false })
+    expect(previewWhileTracking({ stopsTrackingCount: 3, rosterConfirmed: true }, true))
+      .toEqual({ stopsTrackingCount: 3, rosterConfirmed: true })
+    expect(previewWhileTracking(null, false)).toBeNull()
   })
 
   it('says when removing the row stops tracking nobody', () => {

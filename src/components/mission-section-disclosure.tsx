@@ -1,7 +1,7 @@
 import { useState, type ReactNode } from 'react'
 
 import type { MissionSectionSummary } from '../features/mission/mission-section-summary'
-import { SectionBodyOpenContext } from './section-body-open'
+import { SectionBodyOpenContext, useSectionBodyOpen } from './section-body-open'
 
 type MissionSectionDisclosureProps = {
   readonly title: string
@@ -28,6 +28,8 @@ type MissionSectionDisclosureProps = {
  */
 export function MissionSectionDisclosure(props: MissionSectionDisclosureProps) {
   const [expanded, setExpanded] = useState(false)
+  // A fold inside a hidden panel is hidden too.
+  const parentShown = useSectionBodyOpen()
   if (!props.collapsible) return <>{props.alwaysShown}{props.children}</>
   if (props.foldLabel !== undefined) {
     return (
@@ -35,6 +37,7 @@ export function MissionSectionDisclosure(props: MissionSectionDisclosureProps) {
         alwaysShown={props.alwaysShown}
         expanded={expanded}
         foldLabel={props.foldLabel}
+        parentShown={parentShown}
         onToggle={() => setExpanded((value) => !value)}
         section={props.section}
         testId={props.testId}
@@ -74,7 +77,7 @@ export function MissionSectionDisclosure(props: MissionSectionDisclosureProps) {
         </span>
       </button>
       <div data-testid={`${props.testId}-body`} hidden={!open}>
-        <SectionBodyOpenContext.Provider value={open}>{props.children}</SectionBodyOpenContext.Provider>
+        <SectionBodyOpenContext.Provider value={open && parentShown}>{props.children}</SectionBodyOpenContext.Provider>
       </div>
     </div>
   )
@@ -92,6 +95,7 @@ function SummaryWithFold(props: {
   readonly foldLabel: string
   readonly alwaysShown: ReactNode
   readonly expanded: boolean
+  readonly parentShown: boolean
   readonly onToggle: () => void
   readonly children: ReactNode
 }) {
@@ -126,7 +130,7 @@ function SummaryWithFold(props: {
         {props.expanded ? '▾ ' : '▸ '}{props.foldLabel}
       </button>
       <div data-testid={`${props.testId}-body`} hidden={!props.expanded}>
-        <SectionBodyOpenContext.Provider value={props.expanded}>{props.children}</SectionBodyOpenContext.Provider>
+        <SectionBodyOpenContext.Provider value={props.expanded && props.parentShown}>{props.children}</SectionBodyOpenContext.Provider>
       </div>
     </div>
   )

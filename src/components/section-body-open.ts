@@ -1,6 +1,6 @@
 import { createContext, useContext } from 'react'
 
-/** Whether the enclosing Mission Control section body is shown; true outside any fold. */
+/** Whether the enclosing panel or section body is shown; true outside any fold or panel. */
 export const SectionBodyOpenContext = createContext(true)
 
 /**

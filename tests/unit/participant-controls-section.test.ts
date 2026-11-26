@@ -9,6 +9,8 @@ import type { ParticipantRuntimeController } from '../../src/features/participan
 import { useParticipantStore } from '../../src/features/participants/participant-store'
 import type { ParticipantRemovalPreview } from '../../src/features/participants/participant-removal-prompt'
 import { MissionSectionDisclosure } from '../../src/components/mission-section-disclosure'
+import { SectionBodyOpenContext } from '../../src/components/section-body-open'
+import { useTrackingStore } from '../../src/features/tracking/tracking-store'
 import type { MissionSectionSummary } from '../../src/features/mission/mission-section-summary'
 import type { MissionParticipant } from '../../src/infrastructure/mission-store/tauri-mission-store'
 import type { NormalizedTrackingDevice } from '../../src/features/tracking/tracking-types'
@@ -59,6 +61,7 @@ describe('ParticipantControlsSection [DON-271]', () => {
     host = null
     useParticipantStore.setState(useParticipantStore.getInitialState())
     useMissionStore.setState(useMissionStore.getInitialState())
+    useTrackingStore.setState(useTrackingStore.getInitialState())
   })
 
   describe('team default group at Start [DON-296]', () => {
@@ -298,6 +301,7 @@ describe('ParticipantControlsSection [DON-271]', () => {
         participants: [groupRow, deviceRow],
         availableDevices: [alice],
       })
+      useTrackingStore.setState({ status: { ...useTrackingStore.getInitialState().status, mode: 'online' } })
       render(element)
     }
 
@@ -366,6 +370,42 @@ describe('ParticipantControlsSection [DON-271]', () => {
       click('[data-testid="participant-remove-part-kmrt"]')
       expect(document.querySelector('[data-testid="participant-remove-confirmation"]')?.textContent)
         .toContain('Stop tracking KMRT (number of people not known)?')
+    })
+
+    it('gives a group count as a minimum while tracking is offline', () => {
+      renderRunning(removeCalls().fn)
+      act(() => useTrackingStore.setState({ status: { ...useTrackingStore.getInitialState().status, mode: 'offline' } }))
+      click('[data-testid="participant-remove-part-kmrt"]')
+      expect(document.querySelector('[data-testid="participant-remove-confirmation"]')?.textContent)
+        .toContain('Stop tracking KMRT (at least 3 people)?')
+    })
+
+    it('keeps focus on the row when Keep is pressed while a save disables Remove', () => {
+      renderRunning(removeCalls().fn)
+      click('[data-testid="participant-remove-part-kmrt"]')
+      act(() => useParticipantStore.setState({ saving: true }))
+      click('[data-testid="participant-remove-keep-btn"]')
+      expect(document.activeElement?.getAttribute('data-participant-kind')).toBe('group')
+    })
+
+    it('closes the question when the panel holding it is hidden', () => {
+      function Panel(props: { readonly shown: boolean }) {
+        return React.createElement(SectionBodyOpenContext.Provider, { value: props.shown },
+          React.createElement(MissionSectionDisclosure, {
+            collapsible: true,
+            foldLabel: "Change who's taking part",
+            section: { summary: '1 group', attention: [] } satisfies MissionSectionSummary,
+            testId: 'mission-participants-section',
+            title: 'People on this mission',
+            children: React.createElement(ParticipantControlsSection, { phase: 'active', part: 'admin', variant: 'simplified' }),
+          }))
+      }
+      renderRunning(removeCalls().fn, React.createElement(Panel, { shown: true }))
+      click('[data-testid="mission-participants-section-toggle"]')
+      click('[data-testid="participant-remove-part-kmrt"]')
+      act(() => root?.render(React.createElement(Panel, { shown: false })))
+      act(() => root?.render(React.createElement(Panel, { shown: true })))
+      expect(document.querySelector('[data-testid="participant-remove-confirmation"]')).toBeNull()
     })
 
     it('closes the question when a reload drops the row, so it does not come back armed', () => {

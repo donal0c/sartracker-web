@@ -546,28 +546,18 @@ export async function startParticipantRuntime(
     },
     previewRemoval: (participantId) => {
       if (activeMissionId === null) return null
-      const at = now().toISOString()
-      const pendingEvents = pendingMembershipWrite?.events ?? []
       const stopping = devicesStoppingOnRemoval({
         participants,
         membershipEvents,
         backfillCheckpoints,
         participantId,
-        at,
-        observedCurrentFor: (scopeParticipants, removedTeamId) => collectObservedCurrentGroupMembers(
-          scopeParticipants,
-          availableDevices,
-          at,
-          rosterObservationReceived,
-          removedTeamId === null
-            ? pendingEvents
-            : pendingEvents.filter((event) => event.mission_team_id !== removedTeamId),
-        ),
+        at: now().toISOString(),
       })
       if (stopping === null) return null
       return {
         stopsTrackingCount: stopping.length,
-        rosterConfirmed: canSelectGroups() && currentRosterError() === null,
+        // An unsaved membership change may be a member the count is missing.
+        rosterConfirmed: canSelectGroups() && currentRosterError() === null && pendingMembershipWrite === null,
       }
     },
     clearMembershipNotices: () => {
