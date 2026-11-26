@@ -192,7 +192,11 @@ export default [
     check: 'Team mission scenario',
     id: 'team-mission',
     timeoutMs: 45 * 60_000,
-    manualSteps: ['Inspect the scenario screenshots: tracks for both groups on the map, stationary and stale indicators, casualty marker and search area visible.'],
+    manualSteps: [
+      'Inspect the scenario screenshots: tracks for both groups on the map, stationary and stale indicators, casualty marker and search area visible.',
+      'Remove and Finish [DON-373, DON-374, DON-376]: in Mission → Change who\'s taking part, press Remove on one person, then Keep (nobody removed); then Remove and confirm, once during a provider outage. The person leaves the map and People at once, and their saved track stays in Review. Then, while earlier history is still loading, press Mission → Finish → Confirm Finish: it is refused for N people with Try again; press Try again and check the mission stays active.',
+      'Positions [DON-372, DON-377]: after going to a person from People, move the pointer onto the map; the bottom bar says Cursor position and names nobody. Their All devices card shows the Irish Grid reference first.',
+    ],
     async run(ctx) {
       const findings = []
       const notes = []
