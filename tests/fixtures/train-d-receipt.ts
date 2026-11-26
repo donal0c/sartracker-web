@@ -82,7 +82,7 @@ export function createTrainDReceipt() {
         missionId: 'mission-aud08',
         progressScreenshot: '/tmp/evidence/aud08-readded-group-progress.png',
         screenshot: '/tmp/evidence/aud08-readded-group-pending.png',
-        finishBlockedSurface: 'Participant history backfill is incomplete; keep the mission active.',
+        finishBlockedSurface: "Can't finish yet. SAR Tracker is still fetching earlier tracks for 1 person. Check the internet connection, then press Try again.",
         readdedPending: {
           participants: [{
             kind: 'group',

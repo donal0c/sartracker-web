@@ -36,6 +36,8 @@ describe('operator manual describes current behaviour [DON-301]', () => {
     ['DON-338 history re-check running behind', '<strong>Breadcrumb history re-check is running behind for</strong> a named device, with times'],
     ['DON-338 history line stalled', '<strong>History line stalled</strong> message means the line has not changed'],
     ['DON-338 lone fix', 'is drawn as a small circle in the device\'s colour'],
+    ['DON-376 plain Finish refusal', "Can't finish yet. SAR Tracker is still fetching earlier tracks for 2 people."],
+    ['DON-376 Try again', '<strong>Try again</strong> never finishes the mission.'],
   ])('%s', (_change, text) => {
     expect(manual).toContain(text)
   })
@@ -54,6 +56,7 @@ describe('operator manual describes current behaviour [DON-301]', () => {
   it('no longer uses wording the app has dropped', () => {
     expect(manual).not.toContain('was lost during runtime shutdown')
     expect(manual).not.toContain('Nothing is selected automatically. Starting')
+    expect(manual).not.toContain('participant history backfill checkpoint(s) are incomplete')
   })
 
   it('checks readiness on the new top bar, not the removed classic mast [DON-353]', () => {

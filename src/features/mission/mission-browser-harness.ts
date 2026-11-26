@@ -26,6 +26,7 @@ import { recordTrackingPollLedgerEntry } from '../diagnostics/tracking-poll-ledg
 import { startExactBreadcrumbDotRuntime } from '../tracking/start-exact-breadcrumb-dot-runtime'
 import { useExactBreadcrumbDotStore } from '../tracking/exact-breadcrumb-dot-store'
 import { applyCurrentPositionRejections } from '../tracking/ingest-health-store'
+import { useStationaryAttentionStore } from '../tracking/stationary-attention-store'
 import { registerParticipantCatalogueSource, useParticipantStore } from '../participants/participant-store'
 import { isMissionModelEnabled } from '../runtime/mission-model-flag'
 import { startCoverageRuntime } from '../tracking/start-coverage-runtime'
@@ -129,6 +130,7 @@ export async function startMissionBrowserHarness(): Promise<void> {
     const electronRuntime = isElectronRuntimeAvailable()
     const trackingConfig = runtimeSettings.trackingConfig ?? envTrackingConfig
     const { startTrackingRuntime } = await import('../tracking/start-tracking-runtime')
+    useStationaryAttentionStore.getState().setPollInterval(runtimeSettings.trackingPollIntervalMs)
     const stopTracking = await startTrackingRuntime({
       config: trackingConfig,
       createClient: electronRuntime ? createElectronTraccarClient : createTraccarClient,
@@ -231,6 +233,12 @@ export async function startMissionBrowserHarness(): Promise<void> {
   await applyAppRuntimeController({
     reloadSettings,
     isTrackingConnected: () => trackingConnectionApplied,
+    // The browser harness never downloads participant history, so it says so
+    // rather than pretend a retry started (DON-376).
+    retryParticipantHistory: async () => ({
+      kind: 'unavailable',
+      reason: 'Browser testing mode does not fetch earlier tracks.',
+    }),
     dispose: async () => {
       if (disposed) {
         return

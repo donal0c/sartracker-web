@@ -151,9 +151,10 @@ Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
       .getByRole('button', { name: 'Confirm Finish' })
       .click()
     await expect(page.getByTestId('mission-control')).toContainText(
-      'participant history backfill checkpoint(s) are incomplete',
+      "Can't finish yet. SAR Tracker is still fetching earlier tracks",
     )
     await expect(page.getByTestId('mission-control')).toHaveAttribute('data-mission-phase', 'active')
+    await expect(page.getByTestId('mission-finish-dialog').getByTestId('mission-history-retry')).toHaveText('Try again')
 
     await captureElementAndRegister(page, 'mission-finish-dialog', {
       testId: 'participant-backfill-finish-fence',
@@ -162,8 +163,8 @@ Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
       severity: 'critical',
       verificationPrompt: `Verify this screenshot of SAR Tracker's still-open finish decision after participant history backfill blocked completion:
 1. The decision remains clearly headed "END MISSION?" rather than presenting a finished or archived state.
-2. A prominent, legible error says the mission cannot be finished while participant history backfill checkpoints are incomplete.
-3. The error tells the coordinator to keep the mission active and retry history backfill before finishing.
+2. A prominent, legible error says "Can't finish yet" because SAR Tracker is still fetching earlier tracks for a number of people.
+3. The error tells the coordinator to check the internet connection and press Try again, and a "Try again" button is shown with it.
 4. The dialog still offers distinct "Confirm Finish" and "Cancel" actions so the operator can retry or back out.
 5. The failure reads as an actionable safety refusal, not as a generic crash, blank surface, or success message.
 Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
@@ -171,6 +172,7 @@ Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
         'mission remains active',
         'pending backfill is visible',
         'finish refusal is visible',
+        'Try again is offered',
       ],
     })
   })

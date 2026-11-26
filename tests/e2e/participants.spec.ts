@@ -309,13 +309,28 @@ test.describe('mission participants [DON-271]', () => {
       .click()
 
     await expect(page.getByTestId('mission-control')).toContainText(
-      'participant history backfill checkpoint(s) are incomplete',
+      "Can't finish yet. SAR Tracker is still fetching earlier tracks",
     )
+    await expect(page.getByTestId('mission-control')).toContainText('for 1 person. Check the internet connection, then press Try again.')
+    await expect(page.getByTestId('mission-control')).not.toContainText('backfill checkpoint')
     await expect(page.getByTestId('mission-control')).toHaveAttribute('data-mission-phase', 'active')
     const mission = await page.evaluate(() =>
       window.__SARTRACKER_BROWSER_HARNESS__?.readState().missions.at(-1),
     )
     expect(mission?.status).toBe('active')
+
+    // Try again never finishes the mission. The browser harness downloads no
+    // history, so Try again says it could not start rather than pretend (DON-376).
+    await page.getByTestId('mission-finish-dialog').getByTestId('mission-history-retry').click()
+    await expect(page.getByTestId('mission-finish-dialog').getByTestId('mission-action-error')).toContainText(
+      'Try again did not work: Browser testing mode does not fetch earlier tracks.',
+    )
+    await expect(page.getByTestId('mission-history-retry-note')).toHaveCount(0)
+    await expect(page.getByTestId('mission-control')).toHaveAttribute('data-mission-phase', 'active')
+    const afterRetry = await page.evaluate(() =>
+      window.__SARTRACKER_BROWSER_HARNESS__?.readState().missions.at(-1),
+    )
+    expect(afterRetry?.status).toBe('active')
   })
 
   test('rejects a later group selection that would duplicate an active individual', async ({ page }) => {

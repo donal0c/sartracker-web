@@ -223,12 +223,12 @@ describe('device workspace model', () => {
     })
   })
 
-  it('distinguishes unavailable and uncorroborated stationary evaluation', () => {
+  it('distinguishes too-few-positions and uncorroborated stationary evaluation', () => {
+    // Too few positions is said once on the tracking line, not per row [DON-384].
     expect(buildDeviceWorkspaceRows(SNAPSHOT, [], undefined, {
       alpha: { state: 'insufficient-data', acknowledged: false },
     })[0]).toMatchObject({
       stationaryAttention: false,
-      stationaryAttentionUnavailable: true,
       stationaryAttentionUnreliable: false,
     })
 
@@ -240,7 +240,6 @@ describe('device workspace model', () => {
       },
     })[0]).toMatchObject({
       stationaryAttention: true,
-      stationaryAttentionUnavailable: false,
       stationaryAttentionUnreliable: true,
     })
   })

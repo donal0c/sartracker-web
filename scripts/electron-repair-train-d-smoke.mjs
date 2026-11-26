@@ -790,7 +790,7 @@ async function runAud08({ launch, provider, evidenceDir }) {
   await boundedPageAction(page, () => confirmFinishMission(page), 'AUD-08 attempt finish from the Mission panel')
   const finishBlocked = await waitForValue(
     () => page.locator('body').innerText(),
-    (text) => text.toLowerCase().includes('participant history backfill') && text.toLowerCase().includes('incomplete'),
+    (text) => text.includes("Can't finish yet") && text.includes('still fetching earlier tracks') && text.includes('Try again'),
     'AUD-08 finish fence to remain visible',
   )
   const afterBlocked = await readParticipantSnapshot(page, mission.id)

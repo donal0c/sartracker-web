@@ -7,6 +7,12 @@ import {
   type StationaryAttentionEvaluation,
 } from './stationary-attention'
 import { createStationaryAttentionProjector } from './stationary-attention-projection'
+import {
+  STATIONARY_CHECK_OFF_GRACE_MS,
+  checkOffClockNow,
+  stationaryCheckOffGraceMs,
+  trackStationaryCheckOffSince,
+} from './stationary-check-off'
 import type { TrackingSnapshot } from './tracking-types'
 
 export type DeviceStationaryAttention = StationaryAttentionEvaluation & {
@@ -16,6 +22,15 @@ export type DeviceStationaryAttention = StationaryAttentionEvaluation & {
 export type StationaryAttentionStore = {
   readonly missionId: string | null
   readonly byDevice: Readonly<Record<string, DeviceStationaryAttention>>
+  /**
+   * When each person with a live position was first seen with fewer than two
+   * kept trail positions, on the monotonic check-off clock [DON-384].
+   */
+  readonly checkOffSinceByDevice: Readonly<Record<string, number>>
+  /** How long a trail may stay short before the tracking line says so. */
+  readonly checkOffGraceMs: number
+  /** When the mission last became running with tracking connected, or null while it is not. */
+  readonly checkOffGateOpenedAtMs: number | null
   readonly config: StationaryAttentionConfig
   readonly applySnapshot: (
     snapshot: TrackingSnapshot,
@@ -24,6 +39,10 @@ export type StationaryAttentionStore = {
   ) => void
   readonly acknowledge: (deviceId: string) => void
   readonly setConfig: (input: unknown) => void
+  /** Sets the grace period from the tracking refresh interval. */
+  readonly setPollInterval: (pollIntervalMs: number) => void
+  /** Opens or closes the running-and-connected gate; reopening restarts the wait. */
+  readonly setCheckOffGate: (open: boolean) => void
 }
 
 const stationaryAttentionProjector = createStationaryAttentionProjector()
@@ -31,6 +50,9 @@ const stationaryAttentionProjector = createStationaryAttentionProjector()
 export const useStationaryAttentionStore = create<StationaryAttentionStore>((set, get) => ({
   missionId: null,
   byDevice: {},
+  checkOffSinceByDevice: {},
+  checkOffGraceMs: STATIONARY_CHECK_OFF_GRACE_MS,
+  checkOffGateOpenedAtMs: null,
   config: DEFAULT_STATIONARY_ATTENTION_CONFIG,
   applySnapshot: (snapshot, suppliedMissionId, activeDeviceIds) => {
     const current = get()
@@ -44,7 +66,8 @@ export const useStationaryAttentionStore = create<StationaryAttentionStore>((set
     if (Object.keys(current.byDevice).length > 0 && evidenceIsIdentical) {
       return
     }
-    const previous = missionId === get().missionId ? get().byDevice : {}
+    const sameMission = missionId === get().missionId
+    const previous = sameMission ? get().byDevice : {}
     const evaluations = stationaryAttentionProjector.project(
       snapshot,
       current.config,
@@ -67,7 +90,16 @@ export const useStationaryAttentionStore = create<StationaryAttentionStore>((set
             : false,
       }
     }
-    set({ missionId, byDevice })
+    const keptFixCountByDevice = new Map(Object.keys(byDevice).map((deviceId) =>
+      [deviceId, stationaryAttentionProjector.keptFixCount(deviceId)]))
+    const checkOffSinceByDevice = trackStationaryCheckOffSince(
+      sameMission ? current.checkOffSinceByDevice : {},
+      keptFixCountByDevice,
+      snapshot.positions,
+      checkOffClockNow(),
+      new Set(snapshot.unconfirmedCurrentDeviceIds ?? []),
+    )
+    set({ missionId, byDevice, checkOffSinceByDevice })
   },
   acknowledge: (deviceId) => set((state) => {
     const current = state.byDevice[deviceId]
@@ -80,6 +112,12 @@ export const useStationaryAttentionStore = create<StationaryAttentionStore>((set
     previousSnapshot = null
     stationaryAttentionProjector.reset()
     set({ config: sanitizeStationaryAttentionConfig(input) })
+  },
+  setPollInterval: (pollIntervalMs) => set({ checkOffGraceMs: stationaryCheckOffGraceMs(pollIntervalMs) }),
+  setCheckOffGate: (open) => {
+    const openedAt = get().checkOffGateOpenedAtMs
+    if (open && openedAt === null) set({ checkOffGateOpenedAtMs: checkOffClockNow() })
+    if (!open && openedAt !== null) set({ checkOffGateOpenedAtMs: null })
   },
 }))
 
@@ -101,6 +139,7 @@ function hasIdenticalStationaryEvidence(
   const identical = previousSnapshot?.positions === snapshot.positions &&
     previousSnapshot.breadcrumbs === snapshot.breadcrumbs &&
     previousSnapshot.devices === snapshot.devices &&
+    previousSnapshot.unconfirmedCurrentDeviceIds === snapshot.unconfirmedCurrentDeviceIds &&
     previousMissionId === missionId &&
     previousActiveDeviceKey === activeDeviceKey &&
     previousConfig === config

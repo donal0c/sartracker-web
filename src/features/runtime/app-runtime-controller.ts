@@ -1,7 +1,11 @@
+import type { ParticipantHistoryRetryOutcome } from '../tracking/participant-history-retry'
+
 export type AppRuntimeController = {
   readonly reloadSettings: (options?: { readonly forceConnect?: boolean }) => Promise<void>
   /** Whether the settings applied last hold a live tracking connection. */
   readonly isTrackingConnected: () => boolean
+  /** Fetches incomplete participant history now, skipping its backoff (DON-376). */
+  readonly retryParticipantHistory: () => Promise<ParticipantHistoryRetryOutcome>
   readonly dispose: () => Promise<void>
 }
 
@@ -40,6 +44,9 @@ async function replaceAppRuntimeController(
       await nextController.reloadSettings(options)
     },
     isTrackingConnected: () => !disposed && nextController.isTrackingConnected(),
+    retryParticipantHistory: async () => disposed
+      ? { kind: 'unavailable', reason: 'SAR Tracker is shutting down.' }
+      : nextController.retryParticipantHistory(),
     dispose: () => {
       if (disposalPromise === null) {
         disposed = true

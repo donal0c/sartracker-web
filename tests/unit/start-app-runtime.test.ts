@@ -1130,6 +1130,39 @@ describe('app runtime startup', () => {
     expect(runtime!.isTrackingConnected()).toBe(true)
   })
 
+  it('passes Try again to the live tracking session without reconnecting [DON-376]', async () => {
+    const store: MissionStore & AutosaveStore = createMissionStoreStub()
+    const readRuntimeBootstrapSettings = vi.fn(async (forceConnect?: boolean) =>
+      forceConnect === true
+        ? createBootstrapSettings()
+        : { ...createBootstrapSettings(), trackingConfig: null })
+    const retryParticipantHistoryNow = vi.fn().mockResolvedValue({ kind: 'started', unfetchableDeviceCount: 0 })
+    const session = Object.assign(vi.fn(), { reconfigure: vi.fn(), retryParticipantHistoryNow })
+    const startTrackingRuntime = vi.fn().mockResolvedValue(session)
+
+    const runtime = await startAppRuntime({
+      registerServiceWorker: vi.fn().mockResolvedValue(undefined),
+      isTauriRuntimeAvailable: vi.fn().mockReturnValue(true),
+      createMissionStore: vi.fn().mockReturnValue(store),
+      readRuntimeBootstrapSettings,
+      startMissionAutosave: vi.fn().mockReturnValue(createAutosaveController()),
+      startMissionRuntime: vi.fn().mockResolvedValue({}),
+      startMissionGovernanceRuntime: vi.fn().mockResolvedValue({}),
+      startMarkerRuntime: vi.fn().mockResolvedValue({}),
+      startDrawingRuntime: vi.fn().mockResolvedValue({}),
+      startGpxRuntime: vi.fn().mockResolvedValue({}),
+      startTrackingRuntime,
+    })
+    await runtime!.reloadSettings({ forceConnect: true })
+    expect(await runtime!.retryParticipantHistory()).toEqual({ kind: 'started', unfetchableDeviceCount: 0 })
+    expect(retryParticipantHistoryNow).toHaveBeenCalledOnce()
+    // Try again never reconnects: no settings reload is started by it.
+    expect(readRuntimeBootstrapSettings).toHaveBeenCalledTimes(2)
+
+    await runtime!.dispose()
+    expect(await runtime!.retryParticipantHistory()).toEqual({ kind: 'unavailable', reason: 'SAR Tracker is shutting down.' })
+  })
+
   it('reports tracking as not connected after settings that stop tracking are applied [DON-352]', async () => {
     const store: MissionStore & AutosaveStore = createMissionStoreStub()
     const readRuntimeBootstrapSettings = vi.fn()

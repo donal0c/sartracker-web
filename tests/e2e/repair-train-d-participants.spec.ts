@@ -59,7 +59,7 @@ test('keeps a re-added group visibly pending until every selected member complet
   await page.screenshot({ path: test.info().outputPath('pending-group-progress.png'), fullPage: true })
   await page.getByTestId('mission-finish-btn').click()
   await page.getByTestId('mission-finish-dialog').getByRole('button', { name: 'Confirm Finish' }).click()
-  await expect(page.getByTestId('mission-control')).toContainText('participant history backfill checkpoint(s) are incomplete')
+  await expect(page.getByTestId('mission-control')).toContainText("Can't finish yet. SAR Tracker is still fetching earlier tracks")
   expect(await page.evaluate(() => window.__SARTRACKER_BROWSER_HARNESS__!.readState().missions[0]!.status)).toBe('active')
   await page.screenshot({ path: test.info().outputPath('pending-group-finish.png'), fullPage: true })
 })

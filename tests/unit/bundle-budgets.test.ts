@@ -7,7 +7,7 @@ describe('bundle budgets', () => {
     expect(getBundleBudget('mission-review-abc123.js').maxBytes).toBe(DEFAULT_BUNDLE_BUDGET_BYTES)
   })
 
-  it('bounds the main entry chunk at 620 KB: 600 KB after the classic layout went [DON-353], plus the folded people controls and docked All devices [DON-368] and the Remove question [DON-373]', () => {
+  it('bounds the main entry chunk at 620 KB: 600 KB after the classic layout went [DON-353], plus the folded people controls and docked All devices [DON-368], plus DON-371 wave 1', () => {
     expect(getBundleBudget('index-abc123.js').maxBytes).toBe(620_000)
   })
 
