@@ -235,7 +235,7 @@ export function describeTrackingHeadline(input: {
     }
   }
   // A map or record alarm must not call positions live while the feed is not online [DON-375].
-  const feedNotLive = status.mode === 'online' ? {} : { feedNotLive: true as const }
+  const feedNotLive = status.mode === 'online' ? {} : { feedNotLive: true as const, lastReceivedShown }
   // The feed is fine but the map still draws older positions: that must never
   // read as live, so it is the alarm, ahead of the record warning [DON-357].
   if (input.mapUpdateFailed) {

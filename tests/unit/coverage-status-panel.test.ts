@@ -23,6 +23,13 @@ afterEach(() => {
 })
 
 describe('coverage status panel [DON-275]', () => {
+  it('never calls current positions live while tracking is not live [DON-375]', () => {
+    render(state('partial', { backfillIncomplete: true }))
+    expect(host.textContent).toContain('Current positions remain live')
+    render(state('partial', { backfillIncomplete: true }), { trackingLive: false })
+    expect(host.textContent).not.toContain('remain live')
+    expect(host.textContent).toContain('Current positions are not live')
+  })
   it('AUD-14 does not claim all history when retrieval has failed despite saved evidence being delivered', () => {
     act(() => root.render(React.createElement(CoverageStatusPanel, {
       state: state('complete', { blockers: ['history_reconciliation_incomplete'] }), omittedDeviceCount: 0, omittedOutingCount: 0, unassignedOmitted: false,
@@ -206,7 +213,7 @@ describe('coverage status panel [DON-275]', () => {
     )
     expect(host.querySelector('[data-testid="coverage-out-of-memory"]')?.textContent).toBe(
       'This mission\'s history is too large for the history builder, so the whole-history line may stay missing. ' +
-      'Saved positions are safe and current positions remain live. Use Inspect exact fixes to check saved positions.',
+      'Saved positions are safe. Current positions remain live. Use Inspect exact fixes to check saved positions.',
     )
 
     render(state('error', { lastErrorClass: 'worker', updating: true }))
@@ -285,6 +292,7 @@ function render(
     readonly omittedOutingCount?: number
     readonly unassignedOmitted?: boolean
     readonly onRetry?: () => void
+    readonly trackingLive?: boolean
   } = {},
 ): void {
   act(() => {
@@ -295,6 +303,7 @@ function render(
       unassignedOmitted: props.unassignedOmitted ?? false,
       onRetry: props.onRetry ?? (() => undefined),
       onInspectExactFixes: () => undefined,
+      ...(props.trackingLive === undefined ? {} : { trackingLive: props.trackingLive }),
     }))
   })
 }

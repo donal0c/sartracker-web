@@ -34,7 +34,7 @@ const TRACKING_ADVICE: Record<TrackingCondition, { readonly happened: string; re
 /** Map and record advice while the feed is not online, so neither calls positions live [DON-375]. */
 const FEED_NOT_LIVE_ADVICE = {
   map: { happened: 'The map could not draw the latest positions, and tracking is not live: new positions are not arriving yet.', map: TRACKING_ADVICE.map.map, todo: "Don't rely on positions drawn on the map or listed in People until this clears. If tracking is reconnecting, wait a few seconds. If this does not clear, open More, then Diagnostics, and send the support bundle." },
-  record: { happened: 'Part of the mission record could not be saved, and tracking is not live: new positions are not arriving yet.', map: LAST_RECEIVED, todo: 'Keep this app open. Do not finish the mission yet. If tracking is reconnecting, wait a few seconds. Open More, then Diagnostics, and send the support bundle.' },
+  record: { happened: 'Part of the mission record could not be saved, and tracking is not live: new positions are not arriving yet.', map: 'No live positions yet.', todo: 'Keep this app open. Do not finish the mission yet. If tracking is reconnecting, wait a few seconds. Open More, then Diagnostics, and send the support bundle.' },
 } as const
 
 /** The one line that says whether the map can be trusted; click for the detail. */

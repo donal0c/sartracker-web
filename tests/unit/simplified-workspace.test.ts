@@ -202,6 +202,7 @@ describe('tracking headline', () => {
       expect(record.alarm).not.toMatch(/positions are live/)
       expect(record.feedNotLive).toBe(true)
       expect(map.feedNotLive).toBe(true)
+      expect(record.lastReceivedShown).toBe(true)
       const liveRecord = describeTrackingHeadline({ ...base, phase: 'active', positions: [kept], evidenceState: 'failed', status: status({}) })
       expect(liveRecord.alarm).toMatch(/positions are live/)
       expect(liveRecord.feedNotLive).toBeUndefined()
