@@ -11,6 +11,8 @@ export const PROBLEM_RANK = {
   mapNotUpdating: 5,
   stale: 10,
   notMoving: 11,
+  /** Someone's not-moving warning cannot work: their trail is not being recorded [DON-384]. */
+  notMovingOff: 11.5,
   rejected: 12,
   conflicting: 13,
   unverified: 14,
