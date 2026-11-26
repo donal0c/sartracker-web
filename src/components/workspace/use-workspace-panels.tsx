@@ -17,6 +17,7 @@ import { MissionControlPanel } from '../mission-control-panel'
 import { usePeopleRows } from '../../features/workspace/use-people-rows'
 import { ExceptionsOnMap } from './exceptions-on-map'
 import { PeoplePanel } from './people-panel'
+import { SectionBodyOpenContext } from '../section-body-open'
 import { useOpenTrackingAdvice } from './use-open-tracking-advice'
 import { TrackingDetails, TrackingAlarm, PanelHead, WorkspaceTopBar } from './workspace-chrome'
 
@@ -214,12 +215,15 @@ export function useWorkspacePanels(input: {
         >
           Close
         </button>
-        <MissionControlPanel
-          onActionErrorChange={input.onActionErrorChange}
-          onAttentionChange={setMissionAttention}
-          onDecisionOpenChange={input.onDecisionOpenChange}
-          variant="simplified"
-        />
+        {/* The panel stays mounted while hidden; hidden questions close (DON-373). */}
+        <SectionBodyOpenContext.Provider value={missionVisible}>
+          <MissionControlPanel
+            onActionErrorChange={input.onActionErrorChange}
+            onAttentionChange={setMissionAttention}
+            onDecisionOpenChange={input.onDecisionOpenChange}
+            variant="simplified"
+          />
+        </SectionBodyOpenContext.Provider>
       </div>
     </aside>
   )

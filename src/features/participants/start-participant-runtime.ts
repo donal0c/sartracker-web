@@ -14,6 +14,7 @@ import { assessParticipantEnvelope } from './participant-envelope'
 import type { ParticipantCatalogueSource } from './participant-catalogue'
 import type { ParticipantRuntimeState } from './participant-store'
 import { createParticipationScope } from './participation-scope'
+import { devicesStoppingOnRemoval, type ParticipantRemovalPreview } from './participant-removal-prompt'
 
 type ParticipantStoreBoundary = {
   readonly resolveLegacyParticipantRoster?: (input: LegacyRosterAttestationInput) => Promise<MissionParticipant>
@@ -107,6 +108,12 @@ export type ParticipantRuntimeController = {
     finish: () => Promise<Result>,
   ) => Promise<Result>
   readonly clearMembershipNotices: () => void
+  /**
+   * What removing this participant would do now: how many people stop being
+   * recorded, and whether the roster behind that count was read completely.
+   * Null when the participant is not an active row of the loaded mission (DON-373).
+   */
+  readonly previewRemoval: (participantId: string) => ParticipantRemovalPreview | null
 }
 
 /** Owns participant hydration, selection, and observation-time group expansion. */
@@ -535,6 +542,28 @@ export async function startParticipantRuntime(
           await replayFencedRosterObservations(fence)
           if (pendingRosterObservations.length > 0) void drainRosterReconciliation()
         }
+      }
+    },
+    previewRemoval: (participantId) => {
+      if (activeMissionId === null) return null
+      const stopping = devicesStoppingOnRemoval({
+        participants,
+        membershipEvents,
+        backfillCheckpoints,
+        participantId,
+        at: now().toISOString(),
+      })
+      if (stopping === null) return null
+      return {
+        stopsTrackingCount: stopping.length,
+        // An unsaved or not yet reconciled membership change may be a member
+        // the count is missing, or a coverage it wrongly relies on.
+        rosterConfirmed: canSelectGroups()
+          && currentRosterError() === null
+          && pendingMembershipWrite === null
+          && pendingRosterObservations.length === 0
+          && !rosterReconciliationRunning
+          && inFlightRosterApplicationCount === 0,
       }
     },
     clearMembershipNotices: () => {

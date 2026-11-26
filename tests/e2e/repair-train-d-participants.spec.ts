@@ -18,6 +18,9 @@ test('keeps a re-added group visibly pending until every selected member complet
   await page.getByTestId('mission-start-btn').click()
   await openMissionSections(page, ['participants'])
   await page.getByTestId('participant-active-list').getByRole('button', { name: 'Remove' }).click()
+  // The harness has no live tracking connection, so a group count is a minimum (DON-373).
+  await expect(page.getByTestId('participant-remove-confirmation')).toContainText('Stop tracking Train D team (at least 1 person)?')
+  await page.getByTestId('participant-remove-confirm-btn').click()
   await expect(page.getByTestId('participant-active-list')).toContainText('No mission participants')
   const earlierLocal = await page.evaluate(async () => {
     await window.__SARTRACKER_BROWSER_HARNESS__!.setParticipantDiscovery({

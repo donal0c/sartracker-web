@@ -7,6 +7,13 @@ import { historyLoaded, historySettled, historyStillLoading, noEarlierHistoryAsk
 import { useMissionStore } from '../../src/features/mission/mission-store'
 import type { ParticipantRuntimeController } from '../../src/features/participants/start-participant-runtime'
 import { useParticipantStore } from '../../src/features/participants/participant-store'
+import type { ParticipantRemovalPreview } from '../../src/features/participants/participant-removal-prompt'
+import { MissionSectionDisclosure } from '../../src/components/mission-section-disclosure'
+import { SectionBodyOpenContext } from '../../src/components/section-body-open'
+import { useTrackingStore } from '../../src/features/tracking/tracking-store'
+import type { MissionSectionSummary } from '../../src/features/mission/mission-section-summary'
+import type { MissionParticipant } from '../../src/infrastructure/mission-store/tauri-mission-store'
+import type { NormalizedTrackingDevice } from '../../src/features/tracking/tracking-types'
 
 let root: Root | null = null
 let host: HTMLDivElement | null = null
@@ -54,6 +61,7 @@ describe('ParticipantControlsSection [DON-271]', () => {
     host = null
     useParticipantStore.setState(useParticipantStore.getInitialState())
     useMissionStore.setState(useMissionStore.getInitialState())
+    useTrackingStore.setState(useTrackingStore.getInitialState())
   })
 
   describe('team default group at Start [DON-296]', () => {
@@ -256,6 +264,191 @@ describe('ParticipantControlsSection [DON-271]', () => {
       const warnings = document.querySelector('[data-testid="participant-warnings"]')?.textContent ?? ''
       expect(warnings).toContain('Earlier positions for removed group Old Team could not be loaded: Stored roster attestation is invalid.')
       expect(warnings).toContain('Removed group Old Team: Earlier positions: could not be loaded (see the warning above)')
+    })
+  })
+
+  describe('Remove asks before it stops tracking anyone [DON-373]', () => {
+    const groupRow: MissionParticipant = {
+      id: 'part-kmrt', mission_id: 'mission', kind: 'group', traccar_device_id: null,
+      mission_team_id: 'team-kmrt', traccar_group_id: '7', team_name: 'KMRT', provenance: 'explicit',
+      effective_from: '2026-11-26T08:00:00Z', added_at: '2026-11-26T08:00:00Z', added_by: 'A',
+      removed_at: null, removed_by: null,
+    }
+    const deviceRow: MissionParticipant = {
+      id: 'part-alice', mission_id: 'mission', kind: 'device', traccar_device_id: '31',
+      mission_team_id: null, traccar_group_id: null, team_name: null, provenance: 'explicit',
+      effective_from: '2026-11-26T08:00:00Z', added_at: '2026-11-26T08:00:00Z', added_by: 'A',
+      removed_at: null, removed_by: null,
+    }
+    const alice: NormalizedTrackingDevice = {
+      device_id: '31', name: 'Alice', status: 'online', last_seen: null, unique_id: 'u-31', category: null, group_id: null,
+    }
+    const previews: Record<string, ParticipantRemovalPreview> = {
+      'part-kmrt': { stopsTrackingCount: 3, rosterConfirmed: true },
+      'part-alice': { stopsTrackingCount: 1, rosterConfirmed: true },
+    }
+
+    function renderRunning(
+      removeParticipant: ParticipantRuntimeController['removeParticipant'],
+      element: React.ReactElement = React.createElement(ParticipantControlsSection, { phase: 'active' }),
+    ): void {
+      const controller: Pick<ParticipantRuntimeController, 'removeParticipant' | 'previewRemoval'> = {
+        removeParticipant,
+        previewRemoval: (participantId) => previews[participantId] ?? null,
+      }
+      useParticipantStore.setState({
+        controller: controller as ParticipantRuntimeController,
+        participants: [groupRow, deviceRow],
+        availableDevices: [alice],
+      })
+      useTrackingStore.setState({ status: { ...useTrackingStore.getInitialState().status, mode: 'online' } })
+      render(element)
+    }
+
+    function removeCalls(): { calls: unknown[][]; fn: ParticipantRuntimeController['removeParticipant'] } {
+      const calls: unknown[][] = []
+      const fn: ParticipantRuntimeController['removeParticipant'] = async (...args) => {
+        calls.push(args)
+        return null
+      }
+      return { calls, fn }
+    }
+
+    it('one click on Remove does not remove; it asks, naming the group and how many people', () => {
+      const remove = removeCalls()
+      renderRunning(remove.fn)
+      click('[data-testid="participant-remove-part-kmrt"]')
+      expect(remove.calls).toHaveLength(0)
+      const confirm = document.querySelector('[data-testid="participant-remove-confirmation"]')
+      expect(confirm?.textContent).toContain('Stop tracking KMRT (3 people)? Their positions stop being recorded.')
+      expect(confirm?.querySelector('[data-testid="participant-remove-confirm-btn"]')?.textContent).toBe('Remove')
+      expect(confirm?.querySelector('[data-testid="participant-remove-keep-btn"]')?.textContent).toBe('Keep')
+    })
+
+    it('names one person for a single device', () => {
+      const remove = removeCalls()
+      renderRunning(remove.fn)
+      click('[data-testid="participant-remove-part-alice"]')
+      expect(document.querySelector('[data-testid="participant-remove-confirmation"]')?.textContent)
+        .toContain('Stop tracking Alice (1 person)? Their positions stop being recorded.')
+    })
+
+    it('Keep closes the question, removes nobody and returns focus to Remove', () => {
+      const remove = removeCalls()
+      renderRunning(remove.fn)
+      click('[data-testid="participant-remove-part-kmrt"]')
+      expect(document.activeElement?.getAttribute('data-testid')).toBe('participant-remove-keep-btn')
+      click('[data-testid="participant-remove-keep-btn"]')
+      expect(remove.calls).toHaveLength(0)
+      expect(document.querySelector('[data-testid="participant-remove-confirmation"]')).toBeNull()
+      expect(document.activeElement?.getAttribute('data-testid')).toBe('participant-remove-part-kmrt')
+    })
+
+    it('confirming removes exactly that participant with the unchanged audit actor and reason', () => {
+      const remove = removeCalls()
+      renderRunning(remove.fn)
+      click('[data-testid="participant-remove-part-kmrt"]')
+      click('[data-testid="participant-remove-confirm-btn"]')
+      expect(remove.calls).toEqual([['part-kmrt', 'Mission coordinator', 'Coordinator removed participant']])
+      expect(document.querySelector('[data-testid="participant-remove-confirmation"]')).toBeNull()
+    })
+
+    it('links the question to the confirm group for screen readers', () => {
+      renderRunning(removeCalls().fn)
+      click('[data-testid="participant-remove-part-kmrt"]')
+      const confirm = document.querySelector('[data-testid="participant-remove-confirmation"]')
+      const questionId = confirm?.getAttribute('aria-describedby') ?? ''
+      expect(document.getElementById(questionId)?.textContent).toContain('Stop tracking KMRT')
+    })
+
+    it('says the number is not known when the runtime cannot preview the removal', () => {
+      renderRunning(removeCalls().fn)
+      act(() => useParticipantStore.setState({ controller: {
+        removeParticipant: removeCalls().fn,
+        previewRemoval: () => null,
+      } as Pick<ParticipantRuntimeController, 'removeParticipant' | 'previewRemoval'> as ParticipantRuntimeController }))
+      click('[data-testid="participant-remove-part-kmrt"]')
+      expect(document.querySelector('[data-testid="participant-remove-confirmation"]')?.textContent)
+        .toContain('Stop tracking KMRT (number of people not known)?')
+    })
+
+    it('gives a group count as a minimum while tracking is offline', () => {
+      renderRunning(removeCalls().fn)
+      act(() => useTrackingStore.setState({ status: { ...useTrackingStore.getInitialState().status, mode: 'offline' } }))
+      click('[data-testid="participant-remove-part-kmrt"]')
+      expect(document.querySelector('[data-testid="participant-remove-confirmation"]')?.textContent)
+        .toContain('Stop tracking KMRT (at least 3 people)?')
+    })
+
+    it('keeps focus on the row when Keep is pressed while a save disables Remove', () => {
+      renderRunning(removeCalls().fn)
+      click('[data-testid="participant-remove-part-kmrt"]')
+      act(() => useParticipantStore.setState({ saving: true }))
+      click('[data-testid="participant-remove-keep-btn"]')
+      expect(document.activeElement?.getAttribute('data-participant-kind')).toBe('group')
+    })
+
+    it('closes the question when the panel holding it is hidden', () => {
+      function Panel(props: { readonly shown: boolean }) {
+        return React.createElement(SectionBodyOpenContext.Provider, { value: props.shown },
+          React.createElement(MissionSectionDisclosure, {
+            collapsible: true,
+            foldLabel: "Change who's taking part",
+            section: { summary: '1 group', attention: [] } satisfies MissionSectionSummary,
+            testId: 'mission-participants-section',
+            title: 'People on this mission',
+            children: React.createElement(ParticipantControlsSection, { phase: 'active', part: 'admin', variant: 'simplified' }),
+          }))
+      }
+      renderRunning(removeCalls().fn, React.createElement(Panel, { shown: true }))
+      click('[data-testid="mission-participants-section-toggle"]')
+      click('[data-testid="participant-remove-part-kmrt"]')
+      act(() => root?.render(React.createElement(Panel, { shown: false })))
+      act(() => root?.render(React.createElement(Panel, { shown: true })))
+      expect(document.querySelector('[data-testid="participant-remove-confirmation"]')).toBeNull()
+    })
+
+    it('keeps keyboard focus in the list after confirming', () => {
+      renderRunning(removeCalls().fn)
+      click('[data-testid="participant-remove-part-kmrt"]')
+      click('[data-testid="participant-remove-confirm-btn"]')
+      act(() => useParticipantStore.setState({ participants: [deviceRow] }))
+      expect(document.activeElement?.getAttribute('data-testid')).toBe('participant-active-list')
+    })
+
+    it('gives a group count as a minimum while the device list is not current', () => {
+      renderRunning(removeCalls().fn)
+      act(() => useTrackingStore.setState({ status: {
+        ...useTrackingStore.getInitialState().status, mode: 'online', warningCodes: ['roster_unavailable'],
+      } }))
+      click('[data-testid="participant-remove-part-kmrt"]')
+      expect(document.querySelector('[data-testid="participant-remove-confirmation"]')?.textContent)
+        .toContain('Stop tracking KMRT (at least 3 people)?')
+    })
+
+    it('closes the question when a reload drops the row, so it does not come back armed', () => {
+      renderRunning(removeCalls().fn)
+      click('[data-testid="participant-remove-part-kmrt"]')
+      act(() => useParticipantStore.setState({ participants: [deviceRow] }))
+      act(() => useParticipantStore.setState({ participants: [groupRow, deviceRow] }))
+      expect(document.querySelector('[data-testid="participant-remove-confirmation"]')).toBeNull()
+    })
+
+    it('closes the question when Change who\'s taking part is folded', () => {
+      renderRunning(removeCalls().fn, React.createElement(MissionSectionDisclosure, {
+        collapsible: true,
+        foldLabel: "Change who's taking part",
+        section: { summary: '1 group', attention: [] } satisfies MissionSectionSummary,
+        testId: 'mission-participants-section',
+        title: 'People on this mission',
+        children: React.createElement(ParticipantControlsSection, { phase: 'active', part: 'admin', variant: 'simplified' }),
+      }))
+      click('[data-testid="mission-participants-section-toggle"]')
+      click('[data-testid="participant-remove-part-kmrt"]')
+      click('[data-testid="mission-participants-section-toggle"]')
+      click('[data-testid="mission-participants-section-toggle"]')
+      expect(document.querySelector('[data-testid="participant-remove-confirmation"]')).toBeNull()
+      expect(document.querySelector('[data-testid="participant-remove-part-kmrt"]')).not.toBeNull()
     })
   })
 

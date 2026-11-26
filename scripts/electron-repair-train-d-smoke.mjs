@@ -694,6 +694,11 @@ async function runAud08({ launch, provider, evidenceDir }) {
     () => activeGroup.getByRole('button', { name: 'Remove', exact: true }).click(),
     'AUD-08 remove initial group',
   )
+  // Remove asks first; confirm the named question as an operator would [DON-373].
+  await boundedPageAction(page,
+    () => activeGroup.getByTestId('participant-remove-confirm-btn').click(),
+    'AUD-08 confirm removing initial group',
+  )
   await waitForValue(
     () => page.getByTestId('participant-active-list').innerText(),
     (text) => !text.includes('Kerry MRT'),
