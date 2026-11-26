@@ -1401,21 +1401,27 @@ export async function startTrackingRuntime(
     const candidate = nextClient === null
       ? { start: () => undefined, stop: async () => undefined }
       : createOwnedPoller(next, nextClient)
-    if (dependencies.config?.baseUrl !== next.config?.baseUrl) {
+    const serverChanged = dependencies.config?.baseUrl !== next.config?.baseUrl
+    if (serverChanged) {
       // Provider-local device ids are not identities across different servers.
       operationalPositionRetention.reset()
       pendingMissionCache = null
       trackingCacheMissionWarningActive = false
       trackingCacheReadWarningActive = false
       trustedOperationalScope = null
-      // lastPublishedOperational is kept: it is what the map still shows, and
-      // a removal must be able to narrow it until the new server publishes.
-      // Narrowing only takes people away, so nothing from the old server is
-      // added or refreshed [DON-374].
     }
     cacheReadActive = false
     currentTransportFreshness.reset()
     dependencies = next
+    if (serverChanged && lastPublishedOperational !== null) {
+      // The old server's markers cannot be checked against who is taking part
+      // now: the same device id can be another person on the new server. Clear
+      // the map until the new server answers [DON-374].
+      lastPublishedOperational = null
+      if (runtimeGeneration === activeTrackingRuntimeGeneration) {
+        dependencies.applySnapshot({ devices: [], positions: [], breadcrumbs: [] })
+      }
+    }
     deferredOperationalSnapshot = null
     client = nextClient
     if (nextClient === null) {

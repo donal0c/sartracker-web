@@ -297,6 +297,8 @@ describe('removing participants from a running mission [DON-374]', () => {
         applyStatus: vi.fn(),
         writeCache: false,
         missionModelEnabled: true,
+        // A poll during a participation reload with no trusted scope records evidence loss.
+        recordMissionEvidenceLoss: vi.fn().mockResolvedValue(undefined),
         logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
         readParticipationScope: () => state.scope,
         readParticipationScopeMissionId: () => MISSION,
@@ -333,14 +335,20 @@ describe('removing participants from a running mission [DON-374]', () => {
       expect(drawn(applySnapshot)).toEqual(['alpha'])
     })
 
-    it('after a change to another server that has not answered yet', async () => {
+    it('clears the old server\'s markers on a server change, so a reused device id cannot keep a removed person', async () => {
       const { nowMs, state, applySnapshot, runtime, dependencies, snapshot } = await start({})
       await state.hooks!.onSnapshot(snapshot, { historyResetKey: MISSION })
       await runtime.reconfigure!({ ...dependencies, config: { baseUrl: 'http://other-synthetic.invalid' } } as never)
-      expect(drawn(applySnapshot)).toEqual(['alpha', 'bravo'])
+      expect(drawn(applySnapshot)).toEqual([])
+      // A scope refresh before the new server answers draws nothing and does
+      // not create a trusted scope that a later fallback poll could use.
       state.scope = scopeWith(true, nowMs)
+      const published = applySnapshot.mock.calls.length
       state.notify('scope')
-      expect(drawn(applySnapshot)).toEqual(['alpha'])
+      expect(applySnapshot.mock.calls.length).toBe(published)
+      state.status = 'loading'
+      await state.hooks!.onSnapshot(snapshot, { historyResetKey: MISSION })
+      expect(drawn(applySnapshot)).toEqual([])
     })
 
     it('when the map shows the startup cache and no poll has arrived', async () => {

@@ -741,7 +741,9 @@
           <p>
             SAR Tracker asks the Traccar server for positions about every 30 seconds (the interval is
             in <a href="#settings">Settings</a>). If the server cannot be reached it keeps the last
-            positions it had and marks them, rather than clearing the map.
+            positions it had and marks them, rather than clearing the map. If you change to a
+            different Traccar server in Settings, the map clears until the new server answers,
+            because the old server's trackers may not be the same people.
           </p>
           <figure class="screenshot narrow">
             <img src="assets/tracking-tab.png" alt="Tracking panel: What has happened, What the map is showing with the last update time, What to do, and the mission history coverage box" />
