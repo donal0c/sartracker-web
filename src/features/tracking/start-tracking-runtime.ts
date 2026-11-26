@@ -57,6 +57,10 @@ import {
   BACKFILL_CHUNK_MILLISECONDS,
   runParticipantBackfillPass,
 } from '../participants/participant-backfill-runtime'
+import {
+  PARTICIPANT_HISTORY_RETRY_NOT_CONNECTED,
+  type ParticipantHistoryRetryOutcome,
+} from './participant-history-retry'
 import { classifyHistoryWindowFailure } from './breadcrumb-history-reconciler'
 import { createOperationalPositionRetention } from '../participants/operational-position-retention'
 import type { IngestEvidenceLossReason } from '../../domain/tracking-ingest-evidence'
@@ -425,8 +429,15 @@ const DEFAULT_TRACKING_RUNTIME_LOGGER: TrackingRuntimeLogger = {
 }
 
 const trackingCacheIdentityTokens = new WeakMap<object, number>()
+export type { ParticipantHistoryRetryOutcome }
+
 export type TrackingRuntimeStop = (() => Promise<void>) & {
   readonly reconfigure?: (dependencies: StartTrackingRuntimeDependencies) => Promise<void>
+  /**
+   * Fetches incomplete participant history now, skipping any backoff still
+   * running, without touching the live connection. Never finishes a mission.
+   */
+  readonly retryParticipantHistoryNow?: () => ParticipantHistoryRetryOutcome
 }
 const breadcrumbRendererSessionId = createBreadcrumbRendererSessionId()
 let nextTrackingCacheIdentityToken = 1
@@ -539,7 +550,10 @@ export async function startTrackingRuntime(
       warningCodes: [dependencies.idleWarningCode ?? 'tracking_not_configured'],
     })
 
-    return async () => invalidateTrackingRuntimeGeneration(runtimeGeneration)
+    return Object.assign(
+      async () => invalidateTrackingRuntimeGeneration(runtimeGeneration),
+      { retryParticipantHistoryNow: () => PARTICIPANT_HISTORY_RETRY_NOT_CONNECTED },
+    )
   }
 
   const { createDeferredMissionEvidenceQueue } = await import('./deferred-mission-evidence')
@@ -1370,7 +1384,38 @@ export async function startTrackingRuntime(
       invalidateTrackingRuntimeGeneration(runtimeGeneration)
     },
   ])
-  return Object.assign(stop, { reconfigure })
+  return Object.assign(stop, { reconfigure, retryParticipantHistoryNow })
+
+  /**
+   * Try again on a refused Finish (DON-376): clears every participant
+   * history backoff so the next pass starts now, then starts it unless one is
+   * already running. The live transport and positions are left alone, and the
+   * durable checkpoints still decide when Finish is allowed.
+   */
+  function retryParticipantHistoryNow(): ParticipantHistoryRetryOutcome {
+    if (!acceptingRuntimeUpdates || participantBackfillAbortController.signal.aborted) {
+      return { kind: 'unavailable', reason: 'Tracking is restarting. Wait a moment, then press Try again.' }
+    }
+    if (dependencies.missionModelEnabled !== true ||
+      dependencies.missionStore.listParticipantBackfillCheckpoints === undefined ||
+      dependencies.missionStore.upsertParticipantBackfillCheckpoint === undefined ||
+      (dependencies.missionStore.persistTrackingPositionsBulk === undefined &&
+        dependencies.missionStore.persistTrackingHistoryBatch === undefined)) {
+      return { kind: 'unavailable', reason: 'This version is not fetching earlier tracks. Tell your technical lead.' }
+    }
+    if (!hasBreadcrumbClient(client)) return PARTICIPANT_HISTORY_RETRY_NOT_CONNECTED
+    for (const state of participantBackfillRetryStates.values()) state.retryAtMs = 0
+    if (participantBackfillRetryTimer !== null) {
+      clearTimeout(participantBackfillRetryTimer)
+      participantBackfillRetryTimer = null
+    }
+    void Promise.resolve().then(() => dependencies.recordDiagnosticEvent?.({
+      level: 'info', category: 'tracking', event: 'participant_history_retry_requested',
+      fields: { backedOffCheckpoints: participantBackfillRetryStates.size },
+    })).catch((error: unknown) => logger.warn('Participant history retry diagnostic could not be recorded.', error))
+    scheduleParticipantBackfill()
+    return { kind: 'started' }
+  }
 
   /** Changes transport settings while one runtime retains all evidence custody. */
   async function reconfigure(next: StartTrackingRuntimeDependencies): Promise<void> {

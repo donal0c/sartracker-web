@@ -734,7 +734,8 @@ export function MissionControlPanel({
           {actionError !== null ? <MissionActionError historyRetry={historyRetry} message={actionError} onRetryHistory={retryHistoryFetch} /> : null}
           <div className="mt-4 flex gap-2">
             <button
-              className="flex-1 bg-rose-600 px-3 py-2 text-[12px] font-semibold text-white hover:bg-rose-700"
+              className="flex-1 bg-rose-600 px-3 py-2 text-[12px] font-semibold text-white hover:bg-rose-700 disabled:cursor-not-allowed disabled:opacity-50"
+              disabled={historyRetry?.busy === true}
               onClick={() => void confirmFinish()}
               type="button"
             >

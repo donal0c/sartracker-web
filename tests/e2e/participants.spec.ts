@@ -310,11 +310,13 @@ test.describe('mission participants [DON-271]', () => {
     )
     expect(mission?.status).toBe('active')
 
-    // Try again restarts the history fetch; it never finishes the mission (DON-376).
+    // Try again never finishes the mission. The browser harness downloads no
+    // history, so Try again says it could not start rather than pretend (DON-376).
     await page.getByTestId('mission-finish-dialog').getByTestId('mission-history-retry').click()
-    await expect(page.getByTestId('mission-history-retry-note')).toHaveText(
-      'Fetching earlier tracks again. Press Finish once they have loaded.',
+    await expect(page.getByTestId('mission-finish-dialog').getByTestId('mission-action-error')).toContainText(
+      'Try again did not work: Browser testing mode does not fetch earlier tracks.',
     )
+    await expect(page.getByTestId('mission-history-retry-note')).toHaveCount(0)
     await expect(page.getByTestId('mission-control')).toHaveAttribute('data-mission-phase', 'active')
     const afterRetry = await page.evaluate(() =>
       window.__SARTRACKER_BROWSER_HARNESS__?.readState().missions.at(-1),

@@ -39,6 +39,7 @@ import {
 import { applyTrackingSnapshot, applyTrackingStatus } from '../tracking/tracking-store'
 import { readTrackingRuntimeConfig } from '../tracking/tracking-runtime-config'
 import type { TrackingRuntimeMissionStore, TrackingRuntimeStop } from '../tracking/start-tracking-runtime'
+import { PARTICIPANT_HISTORY_RETRY_NOT_CONNECTED } from '../tracking/participant-history-retry'
 import { DEFAULT_DEVICE_STALE_THRESHOLD_MS } from '../tracking/tracking-snapshot-health'
 import {
   applyCurrentPositionRejections,
@@ -306,6 +307,10 @@ export async function startAppRuntime(
       await reloadSettings(options)
     },
     isTrackingConnected: () => trackingConnectionApplied,
+    retryParticipantHistory: () => {
+      if (disposed) return { kind: 'unavailable', reason: 'SAR Tracker is shutting down.' }
+      return trackingSession?.retryParticipantHistoryNow?.() ?? PARTICIPANT_HISTORY_RETRY_NOT_CONNECTED
+    },
     dispose: cleanup,
   }
 

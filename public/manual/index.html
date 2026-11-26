@@ -691,10 +691,15 @@
             explains why. While earlier tracks are still being fetched it says, for example,
             <em>Can't finish yet. SAR Tracker is still fetching earlier tracks for 2 people. Check the
             internet connection, then press Try again.</em> Check this computer's internet connection,
-            then press <strong>Try again</strong>: the app reconnects to the tracking server and starts
-            fetching that history again straight away, and says <em>Fetching earlier tracks again</em>.
+            then press <strong>Try again</strong>: the app starts fetching that history again straight
+            away, without waiting for its next automatic retry, and says <em>Fetching earlier tracks
+            again</em>. Live tracking carries on as before. If it cannot start, for example because
+            tracking is not connected, the red message stays and says why.
             <strong>Try again</strong> never finishes the mission. Press <strong>Finish</strong> again once
-            <em>Earlier positions</em> shows loaded; until then Finish is still refused. For other
+            <em>Earlier positions</em> shows loaded, or when the message changes to <em>Earlier tracks have
+            now loaded</em>; until then Finish is still refused. After a restart,
+            <strong>Finish it, start new</strong> is refused for the same reason: resume the unfinished
+            mission so its earlier tracks can load, then finish it. For other
             refusals, fix or wait, then try again. Do not treat a refused Finish as a cosmetic error.
           </div>
 

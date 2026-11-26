@@ -616,6 +616,9 @@ describe('useMissionControlViewModel', () => {
 
 
   describe('Finish refused while earlier tracks are still being fetched [DON-376]', () => {
+    const PLAIN_TWO =
+      "Can't finish yet. SAR Tracker is still fetching earlier tracks for 2 people. Check the internet connection, then press Try again."
+
     function setUpRefusedFinish() {
       const finishMission = vi.fn().mockRejectedValue(new Error(HISTORY_REFUSAL))
       const refreshMission = vi.fn().mockResolvedValue(undefined)
@@ -629,54 +632,74 @@ describe('useMissionControlViewModel', () => {
           historyCheckpoint('2', '2026-05-17T08:00:00.000Z'),
         ],
       })
-      const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
-      return { finishMission, refreshMission, warn }
+      return { finishMission, refreshMission }
     }
 
     it('says in plain words how many people are still loading and offers Try again', async () => {
-      const { refreshMission, warn } = setUpRefusedFinish()
+      const { refreshMission } = setUpRefusedFinish()
       const { getModel } = renderHook()
 
       await act(async () => getModel().confirmFinish())
 
-      expect(refreshMission).toHaveBeenCalledWith('mission-1')
-      expect(getModel().actionError).toBe(
-        "Can't finish yet. SAR Tracker is still fetching earlier tracks for 2 people. Check the internet connection, then press Try again.",
-      )
+      expect(getModel().actionError).toBe(PLAIN_TWO)
       expect(getModel().historyRetry).toEqual({ busy: false })
       expect(useMissionStore.getState().phase).toBe('active')
-      // The store's precise refusal stays in the log for diagnostics.
-      expect(warn).toHaveBeenCalledWith(expect.stringContaining('Finish refused'), HISTORY_REFUSAL)
+      // Counting never reloads the participant scope live evidence depends on.
+      expect(refreshMission).not.toHaveBeenCalled()
     })
 
-    it('Try again restarts the history fetch through the existing reconnect path and never finishes', async () => {
+    it('keeps the count current as earlier tracks finish loading', async () => {
+      setUpRefusedFinish()
+      const { getModel } = renderHook()
+      await act(async () => getModel().confirmFinish())
+
+      act(() => useParticipantStore.setState({
+        backfillCheckpoints: [
+          { ...historyCheckpoint('1', '2026-05-17T08:00:00.000Z'), completed: 1 },
+          { ...historyCheckpoint('1', '2026-05-17T08:30:00.000Z'), completed: 1 },
+          historyCheckpoint('2', '2026-05-17T08:00:00.000Z'),
+        ],
+      }))
+      expect(getModel().actionError).toContain('for 1 person.')
+
+      act(() => useParticipantStore.setState({
+        backfillCheckpoints: [{ ...historyCheckpoint('2', '2026-05-17T08:00:00.000Z'), completed: 1 }],
+      }))
+      expect(getModel().actionError).toBe('Earlier tracks have now loaded. Press Confirm Finish again.')
+      expect(getModel().historyRetry).toBeNull()
+    })
+
+    it('Try again asks tracking to fetch the history now, and never finishes', async () => {
       const { finishMission } = setUpRefusedFinish()
-      const reloadSettings = vi.fn().mockResolvedValue(undefined)
-      mocks.getAppRuntimeController.mockReturnValue({ reloadSettings })
+      const retryParticipantHistory = vi.fn().mockReturnValue({ kind: 'started' })
+      const reloadSettings = vi.fn()
+      mocks.getAppRuntimeController.mockReturnValue({ retryParticipantHistory, reloadSettings })
       const { getModel } = renderHook()
       await act(async () => getModel().confirmFinish())
 
       await act(async () => getModel().retryHistoryFetch())
 
-      expect(reloadSettings).toHaveBeenCalledWith({ forceConnect: true })
+      expect(retryParticipantHistory).toHaveBeenCalledOnce()
+      expect(reloadSettings).not.toHaveBeenCalled()
       expect(finishMission).toHaveBeenCalledTimes(1)
       expect(getModel().actionError).toBeNull()
       expect(getModel().historyRetry).toBeNull()
-      expect(getModel().historyRetryNote).toBe(
-        'Fetching earlier tracks again. Press Finish once they have loaded.',
-      )
+      expect(getModel().historyRetryNote).toBe('Fetching earlier tracks again. Press Finish once they have loaded.')
     })
 
-    it('keeps the refusal on screen and says so when Try again fails', async () => {
+    it('keeps the refusal on screen and gives the reason when Try again cannot start', async () => {
       setUpRefusedFinish()
-      mocks.getAppRuntimeController.mockReturnValue({ reloadSettings: vi.fn().mockRejectedValue(new Error('Tracking server unreachable.')) })
+      vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+      mocks.getAppRuntimeController.mockReturnValue({
+        retryParticipantHistory: vi.fn().mockReturnValue({ kind: 'unavailable', reason: 'Tracking is not connected. Check the tracking server in Settings.' }),
+      })
       const { getModel } = renderHook()
       await act(async () => getModel().confirmFinish())
 
       await act(async () => getModel().retryHistoryFetch())
 
       expect(getModel().actionError).toBe(
-        "Can't finish yet. SAR Tracker is still fetching earlier tracks for 2 people. Check the internet connection, then press Try again. Try again did not work: Tracking server unreachable.",
+        `${PLAIN_TWO} Try again did not work: Tracking is not connected. Check the tracking server in Settings.`,
       )
       expect(getModel().historyRetry).toEqual({ busy: false })
       expect(getModel().historyRetryNote).toBeNull()
@@ -684,14 +707,34 @@ describe('useMissionControlViewModel', () => {
 
     it('says Try again is unavailable when the app runtime is not running', async () => {
       setUpRefusedFinish()
+      vi.spyOn(console, 'warn').mockImplementation(() => undefined)
       mocks.getAppRuntimeController.mockReturnValue(null)
       const { getModel } = renderHook()
       await act(async () => getModel().confirmFinish())
 
       await act(async () => getModel().retryHistoryFetch())
 
-      expect(getModel().actionError).toContain('Try again did not work: tracking is not running. Restart SAR Tracker.')
+      expect(getModel().actionError).toContain('Try again did not work: Tracking is not running. Restart SAR Tracker.')
       expect(getModel().historyRetry).toEqual({ busy: false })
+    })
+
+    it('a later Finish failure replaces the history refusal, and the note never outlives its mission', async () => {
+      const { finishMission } = setUpRefusedFinish()
+      mocks.getAppRuntimeController.mockReturnValue({ retryParticipantHistory: vi.fn().mockReturnValue({ kind: 'started' }) })
+      const { getModel } = renderHook()
+      await act(async () => getModel().confirmFinish())
+      await act(async () => getModel().retryHistoryFetch())
+
+      finishMission.mockRejectedValueOnce(new Error('Mission cannot be finished while a GPX import is unsettled.'))
+      await act(async () => getModel().confirmFinish())
+      expect(getModel().actionError).toBe('Mission cannot be finished while a GPX import is unsettled.')
+      expect(getModel().historyRetry).toBeNull()
+      expect(getModel().historyRetryNote).toBeNull()
+
+      await act(async () => getModel().confirmFinish())
+      act(() => useMissionStore.setState({ currentMission: createMission({ id: 'mission-2' }) }))
+      expect(getModel().actionError).toBeNull()
+      expect(getModel().historyRetry).toBeNull()
     })
 
     it('leaves other Finish failures as they were, without Try again', async () => {
@@ -702,6 +745,17 @@ describe('useMissionControlViewModel', () => {
 
       expect(getModel().actionError).toBe('Mission is already finished.')
       expect(getModel().historyRetry).toBeNull()
+    })
+
+    it('explains a refused Start Fresh in plain words: resume the mission so its tracks can load', async () => {
+      useMissionStore.setState({ phase: 'recovery', recoverableMission: createMission(), controller: createController({ startFresh: vi.fn().mockRejectedValue(new Error(HISTORY_REFUSAL)) }) })
+      const { getModel } = renderHook()
+
+      await act(async () => getModel().startFresh())
+
+      expect(getModel().actionError).toBe(
+        "Can't start a new mission yet. SAR Tracker still has earlier tracks to fetch for the unfinished mission. Press Resume, check the internet connection, and finish it once they have loaded.",
+      )
     })
   })
 

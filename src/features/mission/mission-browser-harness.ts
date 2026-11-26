@@ -231,6 +231,12 @@ export async function startMissionBrowserHarness(): Promise<void> {
   await applyAppRuntimeController({
     reloadSettings,
     isTrackingConnected: () => trackingConnectionApplied,
+    // The browser harness never downloads participant history, so it says so
+    // rather than pretend a retry started (DON-376).
+    retryParticipantHistory: () => ({
+      kind: 'unavailable',
+      reason: 'Browser testing mode does not fetch earlier tracks.',
+    }),
     dispose: async () => {
       if (disposed) {
         return

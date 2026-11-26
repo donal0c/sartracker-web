@@ -7,6 +7,16 @@ import type { ParticipantBackfillCheckpoint } from '../../infrastructure/mission
  */
 const HISTORY_INCOMPLETE_REFUSAL = /participant history backfill checkpoint\(s\) are incomplete/
 
+/** Said once every earlier track has loaded after a refused Finish (DON-376). */
+export const HISTORY_NOW_LOADED_NOTE = 'Earlier tracks have now loaded. Press Confirm Finish again.'
+
+/**
+ * Start Fresh after a restart finishes the unfinished mission, so the same
+ * refusal applies; its history only loads while that mission runs (DON-376).
+ */
+export const HISTORY_START_FRESH_REFUSAL =
+  "Can't start a new mission yet. SAR Tracker still has earlier tracks to fetch for the unfinished mission. Press Resume, check the internet connection, and finish it once they have loaded."
+
 /** What the operator is told after pressing Try again succeeds (DON-376). */
 export const HISTORY_RETRY_STARTED_NOTE = 'Fetching earlier tracks again. Press Finish once they have loaded.'
 
