@@ -20,7 +20,8 @@ export const BUNDLE_BUDGETS = [
     // DON-368: the folded people controls and docked All devices added about
     // 2 KB (601.5 KB); the bound moves to 610 KB rather than splitting Mission.
     // DON-371 wave 1 (PRs 110-115: Finish refusal, not-connected headline,
-    // Irish Grid first, removed people, stationary line) took main to 614.1 KB;
+    // Irish Grid position on the device card, cursor grid chip, removed
+    // people, stationary line) took main to 614.1 KB;
     // the bound moves to 620 KB rather than splitting first-paint code.
     pattern: /^index-.*\.js$/,
     maxBytes: 620_000,
