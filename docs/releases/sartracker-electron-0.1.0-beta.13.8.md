@@ -24,12 +24,13 @@
   paused time being filled in later. **If anyone is still out overnight,
   leave the mission running; do not pause it.**
 - **The grid reference in the bar at the bottom of the map is never a
-  person's position.** It shows **Map centre**, or **Cursor position** while
-  the pointer is over the map. Before, after going to a person on the map,
+  person's position.** It shows **Map centre** until the pointer first enters
+  the map, then **Cursor position** while the pointer is over it; the values
+  clear when the pointer leaves. Before, after going to a person on the map,
   the bar put their name next to that reading, which could be read out over
   the radio as their position. The name is gone. For a person's position,
   open **People → All devices**, select them and read **Position**, which
-  now gives the Irish Grid reference first; check **Position time** and
+  now gives the Irish Grid reference first; check **Position Time** and
   **Source** too [DON-372, DON-377].
 - **The light theme is now the default.** For night use, open **More** and
   press **Theme: Light** to switch to dark [DON-344].
@@ -112,8 +113,8 @@ Verify downloads first: `sha256sum -c SHA256SUMS --ignore-missing` must say
 - **Trail line kept in Breadcrumb dots** [DON-338]. The dots sit on top of
   the trail line; Earlier and Later move only the dots. A trail you have
   hidden in Layers stays hidden.
-- **The coordinate bar** shows **Map centre**, or **Cursor position** while
-  the pointer is over the map, and never names a person [DON-372].
+- **The coordinate bar** shows **Map centre** until the pointer first enters
+  the map, then **Cursor position**, and never names a person [DON-372].
 - **All devices shows a person's Position as Irish Grid first**, large, with
   latitude and longitude beneath (press **Full width** if the panel is
   docked). Outside Ireland it says **Outside Ireland**; with no usable
@@ -165,8 +166,7 @@ Verify downloads first: `sha256sum -c SHA256SUMS --ignore-missing` must say
   **MISSION PAUSED** and also tells you to connect [DON-375].
 - **Not-moving warnings off:** while a mission is running and tracking is
   connected, if someone has a live position but fewer than two positions
-  saved in their trail for 2 minutes (longer if tracking refreshes less than
-  once a minute), the tracking line shows amber **1 not-moving off** (or 2,
+  saved in their trail for 2 minutes or two refreshes, whichever is longer, the tracking line shows amber **1 not-moving off** (or 2,
   3…). Click it for the possible cause: history not fetched, positions not
   saved, or position times not verified. **Until it clears, check on those
   people by radio**: the app cannot tell you if they stop moving. The grey
@@ -179,8 +179,8 @@ Verify downloads first: `sha256sum -c SHA256SUMS --ignore-missing` must say
 - **Remove asks first.** In **Mission → Change who's taking part**,
   **Remove** now asks how many people will stop being recorded, with
   **Remove** or **Keep**. Anyone still covered by another group or their own
-  row is not counted and stays on the map; if nobody would stop, it says
-  **No one stops being tracked**. If the app cannot be sure of a group's
+  row is not counted and stays on the map; if the app is sure nobody would
+  stop, it says **No one stops being tracked**. If it cannot be sure of the
   count, it says **at least N** or **number of people not known** [DON-373].
 - **Removed people leave the live map at once**, with their trail, People
   count and warnings, even while tracking is down. Their saved track stays in
@@ -193,8 +193,9 @@ Verify downloads first: `sha256sum -c SHA256SUMS --ignore-missing` must say
 - **Finish refused while earlier tracks are still downloading** now says so
   plainly ("still fetching earlier tracks for 1 person", "N people" or "some
   people") with a **Try again** button. Try again asks for the missing tracks
-  straight away; it never finishes the mission. When the dialog says the
-  tracks have loaded, press **Confirm Finish** again. After a restart, if
+  straight away (or says why it cannot start); it never finishes the
+  mission. When the dialog says the tracks have loaded or may have finished
+  loading, press **Confirm Finish** again. After a restart, if
   **Finish it, start new** is refused, choose **Resume** so the tracks can
   load [DON-376].
 
