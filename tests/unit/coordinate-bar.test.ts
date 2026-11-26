@@ -4,12 +4,15 @@ import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, describe, expect, it } from 'vitest'
 
 import { CoordinateBar } from '../../src/components/coordinate-bar'
+import { useMapTargetStore } from '../../src/features/map/map-target-store'
 
 describe('CoordinateBar', () => {
   let root: Root | null = null
   let host: HTMLDivElement | null = null
 
   afterEach(() => {
+    const target = useMapTargetStore.getState().activeTarget
+    if (target !== null) useMapTargetStore.getState().clearActiveTarget(target.id)
     if (root !== null) {
       act(() => root?.unmount())
     }
@@ -41,6 +44,20 @@ describe('CoordinateBar', () => {
 
     expect(text('[data-testid="coordinate-display"]')).toContain('—')
     expect(text('[data-testid="coordinate-display"]')).not.toContain('95')
+  })
+
+  it('never puts a selected person\'s name beside the cursor\'s grid reference [DON-372]', () => {
+    // Searcher 01 is selected at their stored position; the pointer is somewhere else.
+    act(() => useMapTargetStore.getState().queueTarget(51.99917, -9.74406, 'Searcher 01'))
+    render(React.createElement(CoordinateBar, { latitude: 52.274681, longitude: -9.530912 }))
+
+    const bar = text('[data-testid="coordinate-display"]')
+    expect(text('[data-testid="coords-grid"]')).toContain('Q')
+    expect(bar).not.toMatch(/searcher 01/i)
+    expect(query('[data-testid="coordinate-target-indicator"]')).toBeNull()
+    // The readout says whose position it is: the cursor's.
+    expect(text('[data-testid="coordinate-readout-owner"]')).toBe('Cursor position')
+    expect(text('[data-testid="coords-combined"]')).toMatch(/^Cursor position: /)
   })
 
   function render(element: React.ReactElement): void {

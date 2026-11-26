@@ -1,6 +1,7 @@
 import { createRequire } from 'node:module'
 import { expect, test } from '@playwright/test'
 import { openMissionPanel, openMissionReview, openWorkspacePanel } from './helpers/workspace-panels'
+import { expectCoordinateBarNamesNobody, expectMapTargetAt } from './helpers/map-target'
 
 test.describe('M19 devices workspace', () => {
   test.beforeEach(async ({ page }) => {
@@ -32,7 +33,8 @@ test.describe('M19 devices workspace', () => {
     await expect(page.getByTestId('devices-tracking-warning')).toContainText('OFFLINE MODE')
 
     await page.getByTestId('device-zoom-alpha').click()
-    await expect(page.getByTestId('coordinate-target-indicator')).toContainText('Alpha Team')
+    await expectMapTargetAt(page, [-9.74406, 51.99917])
+    await expectCoordinateBarNamesNobody(page, 'Alpha Team')
   })
 
   test('unmounts the workspace immediately when the operator closes it [DON-260]', async ({
@@ -257,7 +259,8 @@ test.describe('M19 devices workspace', () => {
     await expect(page.getByTestId('devices-workspace')).toBeVisible()
     await expect(page.getByTestId('ws-tracking-headline')).toBeVisible()
     await expect(page.getByTestId('marker-at-grid-panel')).toBeHidden()
-    await expect(page.getByTestId('coordinate-target-indicator')).toContainText('Alpha Team')
+    await expectMapTargetAt(page, [-9.74406, 51.99917])
+    await expectCoordinateBarNamesNobody(page, 'Alpha Team')
   })
 
   test('keeps empty workspace clicks from opening Marker Details [DON-184]', async ({
@@ -563,7 +566,8 @@ test.describe('All devices docked after Zoom [DON-368]', () => {
   test('puts the zoomed device in the map that is still visible beside the docked list, with People open', async ({ page }) => {
     await page.getByTestId('device-zoom-bravo').click()
     await expect(page.getByTestId('devices-docked-note')).toBeVisible()
-    await expect(page.getByTestId('coordinate-target-indicator')).toContainText('Bravo Team')
+    await expectMapTargetAt(page, [-9.50722, 52.05944])
+    await expectCoordinateBarNamesNobody(page, 'Bravo Team')
 
     // Wait for the camera to settle, then check the device is right of the dock
     // and inside the map canvas, not underneath the list.

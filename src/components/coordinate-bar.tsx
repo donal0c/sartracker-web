@@ -8,7 +8,6 @@ import {
   wgs84ToTM65,
 } from '../lib/coordinates'
 import { useCoordinateToolStore } from '../features/coordinates/coordinate-tool-store'
-import { useMapTargetStore } from '../features/map/map-target-store'
 
 type CoordinateBarProps = {
   readonly latitude: number | null
@@ -24,9 +23,14 @@ type CoordinateDisplayParts = {
   readonly dmsDisplay: string
 }
 
+/**
+ * Bottom strip showing the position under the cursor (DD, Irish Grid, DMS) and the Convert button.
+ * Every readout here belongs to the cursor, never to a person or marker: no name may sit beside
+ * these values, or a coordinator could read the cursor's grid over the radio as someone's
+ * position (DON-372). A person's own position belongs with that person, with its age.
+ */
 export function CoordinateBar({ latitude, longitude }: CoordinateBarProps) {
   const openDialog = useCoordinateToolStore((state) => state.openDialog)
-  const activeTarget = useMapTargetStore((state) => state.activeTarget)
   const barRef = useRef<HTMLDivElement>(null)
 
   // The readouts wrap onto more rows on a narrow map (DON-368), so publish the real height.
@@ -53,7 +57,7 @@ export function CoordinateBar({ latitude, longitude }: CoordinateBarProps) {
   const dmsDisplay = displays?.dmsDisplay ?? null
   const content =
     wgs84Display !== null && gridDisplay !== null && dmsDisplay !== null
-      ? `${wgs84Display}  |  ${gridDisplay}  |  ${dmsDisplay}`
+      ? `Cursor position: ${wgs84Display}  |  ${gridDisplay}  |  ${dmsDisplay}`
       : '—'
 
   return (
@@ -67,46 +71,48 @@ export function CoordinateBar({ latitude, longitude }: CoordinateBarProps) {
 
         <div aria-hidden="true" className="sar-coordinate-spacer" />
 
-        <div
-          className="sar-coordinate-readouts flex min-w-0 items-center justify-center gap-4 overflow-hidden px-4 max-[1320px]:gap-2 max-[1320px]:px-3"
-          data-testid="coordinate-readout-group"
-        >
-          <InstrumentCell label="DD" valueClassName="text-stone-100" testId="coords-wgs84">
-            {wgs84Display}
-          </InstrumentCell>
-          <span
+        <div className="flex min-w-0 flex-col justify-center">
+          {/* Names whose position the readouts are, so none can be taken for a person's (DON-372). */}
+          <p
             aria-hidden="true"
-            className="sar-coordinate-separator text-stone-500"
+            className="sar-meta-label sar-coordinate-label px-4 text-center leading-none max-[1320px]:px-3"
+            data-testid="coordinate-readout-owner"
           >
-            |
-          </span>
-          <InstrumentCell
-            label="Irish Grid"
-            valueClassName="text-amber-100"
-            testId="coords-grid"
+            Cursor position
+          </p>
+          <div
+            className="sar-coordinate-readouts flex min-w-0 items-center justify-center gap-4 overflow-hidden px-4 max-[1320px]:gap-2 max-[1320px]:px-3"
+            data-testid="coordinate-readout-group"
           >
-            {gridDisplay}
-          </InstrumentCell>
-          <span
-            aria-hidden="true"
-            className="sar-coordinate-separator text-stone-500"
-          >
-            |
-          </span>
-          <InstrumentCell label="DMS" valueClassName="text-stone-100" testId="coords-dms">
-            {dmsDisplay}
-          </InstrumentCell>
+            <InstrumentCell label="DD" valueClassName="text-stone-100" testId="coords-wgs84">
+              {wgs84Display}
+            </InstrumentCell>
+            <span
+              aria-hidden="true"
+              className="sar-coordinate-separator text-stone-500"
+            >
+              |
+            </span>
+            <InstrumentCell
+              label="Irish Grid"
+              valueClassName="text-amber-100"
+              testId="coords-grid"
+            >
+              {gridDisplay}
+            </InstrumentCell>
+            <span
+              aria-hidden="true"
+              className="sar-coordinate-separator text-stone-500"
+            >
+              |
+            </span>
+            <InstrumentCell label="DMS" valueClassName="text-stone-100" testId="coords-dms">
+              {dmsDisplay}
+            </InstrumentCell>
+          </div>
         </div>
 
         <div className="sar-coordinate-actions flex min-w-0 items-center justify-end gap-2 border-l border-[var(--sar-line)] px-4">
-          {activeTarget !== null ? (
-            <span
-              className="min-w-0 truncate border border-amber-500/40 bg-amber-500/12 px-2 py-1 text-[12px] font-sans font-bold uppercase tracking-[0.16em] text-amber-100"
-              data-testid="coordinate-target-indicator"
-              >
-              {activeTarget.label ?? 'Target Active'}
-            </span>
-          ) : null}
           <button
             className="sar-button px-4 py-2 text-xs font-sans font-bold uppercase tracking-[0.1em] max-[1320px]:px-3"
             data-testid="open-coordinate-converter"
