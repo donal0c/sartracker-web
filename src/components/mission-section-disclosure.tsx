@@ -1,6 +1,7 @@
 import { useState, type ReactNode } from 'react'
 
 import type { MissionSectionSummary } from '../features/mission/mission-section-summary'
+import { SectionBodyOpenContext } from './section-body-open'
 
 type MissionSectionDisclosureProps = {
   readonly title: string
@@ -72,7 +73,9 @@ export function MissionSectionDisclosure(props: MissionSectionDisclosureProps) {
           {forced ? 'Needs attention' : open ? 'Hide' : 'Show'}
         </span>
       </button>
-      <div data-testid={`${props.testId}-body`} hidden={!open}>{props.children}</div>
+      <div data-testid={`${props.testId}-body`} hidden={!open}>
+        <SectionBodyOpenContext.Provider value={open}>{props.children}</SectionBodyOpenContext.Provider>
+      </div>
     </div>
   )
 }
@@ -122,7 +125,9 @@ function SummaryWithFold(props: {
       >
         {props.expanded ? '▾ ' : '▸ '}{props.foldLabel}
       </button>
-      <div data-testid={`${props.testId}-body`} hidden={!props.expanded}>{props.children}</div>
+      <div data-testid={`${props.testId}-body`} hidden={!props.expanded}>
+        <SectionBodyOpenContext.Provider value={props.expanded}>{props.children}</SectionBodyOpenContext.Provider>
+      </div>
     </div>
   )
 }

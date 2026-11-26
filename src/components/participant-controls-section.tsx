@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ReactNode } from 'react'
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 
 import { useMissionStore } from '../features/mission/mission-store'
 import { isMissionModelEnabled } from '../features/runtime/mission-model-flag'
@@ -10,7 +10,8 @@ import {
 import { useParticipantStore } from '../features/participants/participant-store'
 import { useParticipantSelectionViewModel } from '../features/participants/use-participant-selection-view-model'
 import { LegacyRosterRecoveryForm } from '../features/participants/legacy-roster-recovery-form'
-import { removalPeopleCount, removalPromptText } from '../features/participants/participant-removal-prompt'
+import { removalPromptText } from '../features/participants/participant-removal-prompt'
+import { useSectionBodyOpen } from './section-body-open'
 import type { ParticipantProvenance } from '../infrastructure/mission-store/tauri-mission-store'
 
 const COORDINATOR_ACTOR = 'Mission coordinator'
@@ -55,12 +56,36 @@ export function ParticipantControlsSection({ phase, lookbackRequested = false, v
   const [addError, setAddError] = useState<string | null>(null)
   // Remove asks first (DON-373): the participant whose confirm is open, if any.
   const [confirmRemoveId, setConfirmRemoveId] = useState<string | null>(null)
+  // Re-read on every runtime publish so the confirm's count stays current.
+  useParticipantStore((state) => state.scope)
+  const sectionBodyOpen = useSectionBodyOpen()
+  const keepButtonRef = useRef<HTMLButtonElement | null>(null)
+  const returnFocusToRemoveId = useRef<string | null>(null)
+  const removeButtons = useRef(new Map<string, HTMLButtonElement>())
   const missionStartTime = useMissionStore((state) => state.currentMission?.start_time ?? null)
 
   const activeParticipants = useMemo(
     () => participants.filter((participant) => participant.removed_at === null),
     [participants],
   )
+
+  // A confirm never outlives its row or a fold: a reload that drops the row,
+  // or folding the section, closes it, so nothing hidden stays armed (DON-373).
+  const confirmTargetActive = confirmRemoveId !== null
+    && activeParticipants.some((participant) => participant.id === confirmRemoveId)
+  if (confirmRemoveId !== null && (!confirmTargetActive || !sectionBodyOpen)) setConfirmRemoveId(null)
+
+  // Keyboard users land on Keep, the safe choice, when the question opens,
+  // and go back to the row's Remove when they keep.
+  useEffect(() => {
+    if (confirmRemoveId !== null) {
+      keepButtonRef.current?.focus()
+      return
+    }
+    const returnId = returnFocusToRemoveId.current
+    returnFocusToRemoveId.current = null
+    if (returnId !== null) removeButtons.current.get(returnId)?.focus()
+  }, [confirmRemoveId])
 
   // Mission setup opening re-reads the Traccar groups, so a group created
   // since startup is selectable without restarting [DON-330].
@@ -306,6 +331,10 @@ export function ParticipantControlsSection({ phase, lookbackRequested = false, v
                 data-testid={`participant-remove-${participant.id}`}
                 disabled={saving}
                 onClick={() => setConfirmRemoveId(participant.id)}
+                ref={(button) => {
+                  if (button === null) removeButtons.current.delete(participant.id)
+                  else removeButtons.current.set(participant.id, button)
+                }}
                 type="button"
               >
                 Remove
@@ -313,17 +342,18 @@ export function ParticipantControlsSection({ phase, lookbackRequested = false, v
             )}
             {confirmRemoveId === participant.id ? (
               <div
+                aria-describedby={`participant-remove-question-${participant.id}`}
+                aria-label={`Confirm removing ${label}`}
                 className="w-full rounded-xl border border-rose-400/40 bg-rose-950/40 p-3 text-rose-100"
                 data-testid="participant-remove-confirmation"
                 role="group"
-                aria-label={`Confirm removing ${label}`}
               >
-                <p className="text-xs font-semibold">
-                  {removalPromptText(label, removalPeopleCount(participant, availableDevices, catalogueError === null))}
+                <p className="text-xs font-semibold" id={`participant-remove-question-${participant.id}`}>
+                  {removalPromptText(label, participant.kind, controller?.previewRemoval(participant.id) ?? null)}
                 </p>
                 <div className="mt-2 flex gap-2">
                   <button
-                    className="rounded-lg border border-rose-300/50 bg-rose-400/20 px-3 py-1.5 text-xs font-semibold text-rose-50"
+                    className="rounded-lg border border-rose-300/50 bg-rose-400/20 px-3 py-1.5 text-xs font-semibold text-rose-50 disabled:cursor-not-allowed disabled:opacity-40"
                     data-testid="participant-remove-confirm-btn"
                     disabled={saving}
                     onClick={() => {
@@ -341,7 +371,11 @@ export function ParticipantControlsSection({ phase, lookbackRequested = false, v
                   <button
                     className="rounded-lg border border-stone-600 bg-stone-950 px-3 py-1.5 text-xs font-semibold text-stone-200"
                     data-testid="participant-remove-keep-btn"
-                    onClick={() => setConfirmRemoveId(null)}
+                    onClick={() => {
+                      returnFocusToRemoveId.current = participant.id
+                      setConfirmRemoveId(null)
+                    }}
+                    ref={keepButtonRef}
                     type="button"
                   >
                     Keep
