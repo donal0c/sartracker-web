@@ -266,6 +266,12 @@ export function installBrowserHarnessApi(): void {
   }
 }
 
+/**
+ * Draws every stored device and fix of the harness mission on the map.
+ * Harness-only: this does not apply the participation scope, so it can show
+ * people who are no longer taking part. Participation on the map is proven
+ * against the real tracking runtime, not here [DON-374].
+ */
 export async function hydrateTrackingFromBrowserHarness(): Promise<void> {
   const snapshot = await createTrackingSnapshotFromHarness()
   applyTrackingSnapshot(snapshot)

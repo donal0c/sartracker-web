@@ -82,6 +82,7 @@ function MapLibreMapView() {
         <CoordinateBar
           latitude={hoverCoordinate.latitude}
           longitude={hoverCoordinate.longitude}
+          source={hoverCoordinate.source}
         />
       ) : null}
       {focusModeActive ? (

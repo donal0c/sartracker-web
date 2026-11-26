@@ -266,6 +266,7 @@ describe('TrackingStatusPanel', () => {
   })
 
   it('shows persistent degraded evidence health and first-accepted conflict truth [DON-268]', () => {
+    useTrackingStore.setState({ status: { mode: 'online', consecutiveFailures: 0, recovered: false, lastSuccessAt: null, warning: null } })
     useIngestHealthStore.getState().applyEvidenceHealth({
       state: 'degraded',
       reason: 'projection_failed',
@@ -291,6 +292,21 @@ describe('TrackingStatusPanel', () => {
     expect(getText('[data-testid="position-conflict-warning"]')).toContain(
       'first accepted fix remains displayed',
     )
+  })
+
+  it('does not call current positions live in the evidence warning while tracking is not connected [DON-375]', () => {
+    useTrackingStore.setState({ status: { mode: 'idle', consecutiveFailures: 0, recovered: false, lastSuccessAt: null,
+      warning: 'Tracking auto-connect is off. Use Save, Connect & Close to start live tracking.', warningCodes: ['tracking_not_configured'] } })
+    useIngestHealthStore.getState().applyEvidenceHealth({
+      state: 'degraded', reason: 'projection_failed', pendingCount: 1, corruptCount: 0, conflictCount: 0,
+      rejectedCount: 0, affectedDeviceCount: 0, conflictDeviceIds: [],
+    })
+
+    render(React.createElement(TrackingStatusPanel))
+
+    const warning = getText('[data-testid="ingest-evidence-health-warning"]')
+    expect(warning).not.toContain('remain live')
+    expect(warning).toContain('Current positions are not live')
   })
 
   it('describes renderer-held rejection evidence as pending save, not storage repair [DON-276]', () => {

@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test'
+import { expectCoordinateBarNamesNobody, expectMapTargetAt } from './helpers/map-target'
 
 test.describe('M18 coordinate converter', () => {
   test.beforeEach(async ({ page, context }) => {
@@ -27,7 +28,8 @@ test.describe('M18 coordinate converter', () => {
 
     await page.getByTestId('coordinate-go-to-btn').click()
     await expect(page.getByTestId('coordinate-converter-dialog')).toBeVisible()
-    await expect(page.getByTestId('coordinate-target-indicator')).toBeVisible()
+    await expectMapTargetAt(page, [-9.464944, 52.179337])
+    await expectCoordinateBarNamesNobody(page, 'Coordinate Target')
   })
 
   test('converts IG and DMS flows with the same modal and gates W3W', async ({ page }) => {

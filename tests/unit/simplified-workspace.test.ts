@@ -128,6 +128,105 @@ describe('tracking headline', () => {
     expect(headline.text).not.toContain('Traccar server')
   })
 
+  describe('a mission whose tracking is not connected [DON-375]', () => {
+    const kept = { device_cache_stale: false } as unknown as NormalizedTrackingPosition
+    const notConfigured = status({
+      mode: 'idle', warning: 'Tracking auto-connect is off. Use Save, Connect & Close to start live tracking.', warningCodes: ['tracking_not_configured'],
+    })
+
+    it('raises the alarm while old positions are drawn, and says where to connect', () => {
+      const headline = describeTrackingHeadline({ ...base, phase: 'active', positions: [kept], status: notConfigured })
+      expect(headline.condition).toBe('notConnected')
+      expect(headline.tone).toBe('alert')
+      expect(headline.problems[0]).toBe('TRACKING NOT CONNECTED')
+      expect(headline.alarm).toMatch(/^TRACKING NOT CONNECTED: positions on the map are not updating/)
+      expect(headline.alarm).toMatch(/Settings → Tracking sources/)
+      expect(headline.remedy).toBe('Connect in Settings')
+      expect(headline.problems).toContain('Connect in Settings')
+      expect(headline.lastReceivedShown).toBe(true)
+      expect(headline.leadInAlarm).toBe(true)
+      expect(headline.text).not.toBe('Tracking not connected')
+    })
+
+    it('still raises the alarm for a running mission before any position arrives', () => {
+      const headline = describeTrackingHeadline({ ...base, phase: 'active', status: notConfigured })
+      expect(headline.condition).toBe('notConnected')
+      expect(headline.tone).toBe('alert')
+      expect(headline.alarm).toMatch(/^TRACKING NOT CONNECTED: no positions are coming in/)
+      expect(headline.lastReceivedShown).toBe(false)
+    })
+
+    it('does not send a configured source waiting for its first poll to Settings', () => {
+      // The bridge leaves an idle status until the first poll answers; that is
+      // not "not configured", and must not flash red with a Settings fix.
+      for (const waiting of [status({ mode: 'idle' }), status({ mode: 'idle', warning: 'Waiting for an active mission.', warningCodes: ['mission_waiting'] })]) {
+        const headline = describeTrackingHeadline({ ...base, phase: 'active', positions: [kept], status: waiting })
+        expect(headline.condition).toBe('disconnected')
+        expect(headline.remedy).toBeUndefined()
+      }
+    })
+
+    it('names a person who needs a radio check before the connect fix', () => {
+      const stale = { device_cache_stale: true } as unknown as NormalizedTrackingPosition
+      const headline = describeTrackingHeadline({ ...base, phase: 'active', positions: [stale], stationaryCount: 1, status: notConfigured })
+      expect(headline.problems.slice(0, 4)).toEqual(['TRACKING NOT CONNECTED', '1 stale', '1 not moving', 'Connect in Settings'])
+    })
+
+    it('keeps the pause as the lead while paused, and adds where to connect', () => {
+      const headline = describeTrackingHeadline({ ...base, phase: 'paused', positions: [kept], status: notConfigured })
+      expect(headline.condition).toBe('paused')
+      expect(headline.tone).toBe('alert')
+      expect(headline.alarm).toMatch(/^MISSION PAUSED: positions are not updating/)
+      expect(headline.alarm).toMatch(/Settings → Tracking sources/)
+      expect(headline.remedy).toBe('Connect in Settings')
+      // A plain pause, where tracking was connected, keeps its own words.
+      const plain = describeTrackingHeadline({ ...base, phase: 'paused', positions: [kept], status: status({ mode: 'idle', warning: 'Live refresh suspended while mission is paused.' }) })
+      expect(plain.alarm).toBe('MISSION PAUSED: positions are not updating')
+      expect(plain.remedy).toBeUndefined()
+    })
+
+    it('reads a reconnect in progress as amber, never as grey, without clearing a map or record alarm', () => {
+      const reconnecting = status({ mode: 'idle', warning: 'Reconnecting tracking — retained positions are last known until a fresh response arrives.', warningCodes: ['tracking_reconnecting'] })
+      const headline = describeTrackingHeadline({ ...base, phase: 'active', positions: [kept], status: reconnecting })
+      expect(headline.condition).toBe('reconnecting')
+      expect(headline.tone).toBe('warning')
+      expect(headline.problems[0]).toBe('Reconnecting')
+      expect(headline.lastReceivedShown).toBe(true)
+      const map = describeTrackingHeadline({ ...base, phase: 'active', positions: [kept], mapUpdateFailed: true, status: reconnecting })
+      expect(map.condition).toBe('map')
+      expect(map.tone).toBe('alert')
+      const record = describeTrackingHeadline({ ...base, phase: 'active', positions: [kept], evidenceState: 'failed', status: reconnecting })
+      expect(record.condition).toBe('record')
+      expect(record.tone).toBe('alert')
+      // Neither may call positions live while the feed is reconnecting.
+      expect(record.alarm).not.toMatch(/positions are live/)
+      expect(record.feedNotLive).toBe(true)
+      expect(map.feedNotLive).toBe(true)
+      expect(record.lastReceivedShown).toBe(true)
+      // The map failed to draw the latest fix, so it must keep its own map wording.
+      expect(map.lastReceivedShown).toBeUndefined()
+      const liveRecord = describeTrackingHeadline({ ...base, phase: 'active', positions: [kept], evidenceState: 'failed', status: status({}) })
+      expect(liveRecord.alarm).toMatch(/positions are live/)
+      expect(liveRecord.feedNotLive).toBeUndefined()
+    })
+
+    it('keeps the map-failure fact when tracking is switched off mid-failure', () => {
+      const headline = describeTrackingHeadline({ ...base, phase: 'active', positions: [kept], mapUpdateFailed: true, status: notConfigured })
+      expect(headline.condition).toBe('notConnected')
+      expect(headline.tone).toBe('alert')
+      expect(headline.mapUpdateFailed).toBe(true)
+      expect(headline.lastReceivedShown).not.toBe(true)
+      expect(headline.problems).toContain('Map not updating')
+    })
+
+    it('stays quiet with no mission running', () => {
+      const headline = describeTrackingHeadline({ ...base, phase: 'idle', positions: [kept], status: notConfigured })
+      expect(headline.condition).toBe('disconnected')
+      expect(headline.tone).toBe('neutral')
+      expect(headline.alarm).toBeUndefined()
+    })
+  })
+
   it('names a saved tracking password that must be re-entered, not a neutral "not connected" [DON-353]', () => {
     // The old layout's warning said what to do; the new bar must say it too.
     const warning = 'Stored Traccar credentials could not be decrypted. Re-enter the password or token in Settings.'

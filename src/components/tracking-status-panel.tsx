@@ -1,4 +1,5 @@
 import { useMemo } from 'react'
+import { describeCurrentPositionsFreshness } from '../features/tracking/current-positions-freshness'
 import { useTrackingStore } from '../features/tracking/tracking-store'
 import { resolveMissionHistoryOmissions } from '../features/layers/breadcrumb-coverage-visibility'
 import { isCriticalTrackingTrustWarning } from '../features/tracking/tracking-trust-warning'
@@ -131,6 +132,8 @@ export function TrackingStatusPanel(props: TrackingStatusPanelProps = {}) {
     null,
   )
   const criticalTrustWarning = isCriticalTrackingTrustWarning(status.warning)
+  // History and evidence warnings must not call positions live while the top bar says they are not [DON-375].
+  const trackingLive = status.mode === 'online' && !criticalTrustWarning
   const historyTransfer = status.savedHistoryTransfer?.missionId === missionId ? status.savedHistoryTransfer : undefined
   const modeLabel = getTrackingModeLabel(status.mode, status.warning)
   // Online with old or unverified positions is not healthy: same rule as the
@@ -247,7 +250,7 @@ export function TrackingStatusPanel(props: TrackingStatusPanelProps = {}) {
         >
           EVIDENCE HEALTH {evidenceHealth.state.toUpperCase()} — {formatEvidenceFailure(evidenceHealth.reason)}.
           {evidenceHealth.acknowledgedLoss === undefined ? (
-            <> Current positions remain live, but anomaly evidence is not fully saved; mission finalization and archive export are blocked {formatEvidenceRecovery(evidenceHealth.reason)}.</>
+            <> {describeCurrentPositionsFreshness(trackingLive)} Anomaly evidence is not fully saved; mission finalization and archive export are blocked {formatEvidenceRecovery(evidenceHealth.reason)}.</>
           ) : (
             <> Evidence loss was acknowledged by {evidenceHealth.acknowledgedLoss.adminName}. Complete and 100% remain blocked permanently; archive and lock may proceed with this warning retained.</>
           )}
@@ -307,6 +310,7 @@ export function TrackingStatusPanel(props: TrackingStatusPanelProps = {}) {
         onInspectExactFixes={() => setBreadcrumbTrailMode('dots')}
         {...(simplified ? { inspectLabel: 'Show recorded positions' } : {})}
         onRetry={() => void coverageController?.resume()}
+        trackingLive={trackingLive}
       />
 
       {breadcrumbTrailMode === 'dots' ? (

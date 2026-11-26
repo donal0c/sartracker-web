@@ -519,6 +519,16 @@ export async function startTrackingRuntime(
     readonly scope: ParticipationScope
     readonly acceptedAt: number
   } | null = null
+  /**
+   * The snapshot last published to the live map, already participation
+   * filtered, before transport freshness is applied. A removal narrows it at
+   * once, even when no further poll arrives [DON-374]. It is never used to
+   * add anyone or to refresh a fix: that waits for the next poll.
+   */
+  let lastPublishedOperational: {
+    readonly snapshot: TrackingSnapshot
+    readonly contextKey: string
+  } | null = null
   let liveCurrentSnapshotContextKey: string | null | undefined
   let cacheReadActive = true
   let pendingMissionCache: {
@@ -1256,6 +1266,7 @@ export async function startTrackingRuntime(
     const previousMissionId = previousState.currentMission?.id ?? null
     if (missionId !== previousMissionId) {
       deferredOperationalSnapshot = null
+      lastPublishedOperational = null
       operationalPositionRetention.reset()
       trustedOperationalScope = null
       liveCurrentSnapshotContextKey = undefined
@@ -1280,7 +1291,11 @@ export async function startTrackingRuntime(
   const unsubscribeParticipationScope = dependencies.subscribeParticipationScope?.((reason = 'scope') => {
     if (!acceptingRuntimeUpdates || runtimeGeneration !== activeTrackingRuntimeGeneration) return
     if (readParticipationScopeStatus() === 'ready') {
-      publishDeferredOperationalSnapshot()
+      if (deferredOperationalSnapshot !== null || pendingMissionCache !== null) {
+        publishDeferredOperationalSnapshot()
+      } else {
+        narrowLiveMapToParticipants()
+      }
       const currentMissionId = useMissionStore.getState().currentMission?.id
       if (currentMissionId !== undefined) {
         void deferredMissionEvidence.flushMission(currentMissionId).catch((error) => {
@@ -1386,7 +1401,8 @@ export async function startTrackingRuntime(
     const candidate = nextClient === null
       ? { start: () => undefined, stop: async () => undefined }
       : createOwnedPoller(next, nextClient)
-    if (dependencies.config?.baseUrl !== next.config?.baseUrl) {
+    const serverChanged = dependencies.config?.baseUrl !== next.config?.baseUrl
+    if (serverChanged) {
       // Provider-local device ids are not identities across different servers.
       operationalPositionRetention.reset()
       pendingMissionCache = null
@@ -1397,6 +1413,17 @@ export async function startTrackingRuntime(
     cacheReadActive = false
     currentTransportFreshness.reset()
     dependencies = next
+    if (serverChanged && lastPublishedOperational !== null) {
+      // The old server's markers cannot be checked against who is taking part
+      // now: the same device id can be another person on the new server. Clear
+      // the map until the new server answers [DON-374].
+      lastPublishedOperational = null
+      // The empty map is not showing cached positions any more.
+      cachedOperationalDataWarning = null
+      if (runtimeGeneration === activeTrackingRuntimeGeneration) {
+        dependencies.applySnapshot({ devices: [], positions: [], breadcrumbs: [] })
+      }
+    }
     deferredOperationalSnapshot = null
     client = nextClient
     if (nextClient === null) {
@@ -1434,6 +1461,7 @@ export async function startTrackingRuntime(
   /** Publishes one participant-scoped map snapshot without awaiting durable work. */
   function publishOperationalSnapshot(snapshot: TrackingSnapshot): void {
     deferredOperationalSnapshot = null
+    lastPublishedOperational = { snapshot, contextKey: currentOperationalContextKey() }
     cachedOperationalDataWarning = describeCachedOperationalData(snapshot)
     dependencies.applySnapshot(currentTransportFreshness.decorate(snapshot))
     refreshTrackingStatus()
@@ -1529,6 +1557,7 @@ export async function startTrackingRuntime(
         }
       } else {
         cachedOperationalDataWarning = describeCachedOperationalData(operationalCachedSnapshot)
+        lastPublishedOperational = { snapshot: operationalCachedSnapshot, contextKey: currentOperationalContextKey() }
         dependencies.applySnapshot(currentTransportFreshness.decorate(operationalCachedSnapshot))
       }
       // Cold-start visibility: until the first live poll succeeds, the operator
@@ -2227,6 +2256,7 @@ export async function startTrackingRuntime(
     if (effectiveScope === null) {
       if (retainCurrentPositions && trustedOperationalScope !== null && !hasUsableTrustedScope(contextKey)) {
         trustedOperationalScope = null
+        lastPublishedOperational = null
         dependencies.applySnapshot({ devices: [], positions: [], breadcrumbs: [] })
       }
       return null
@@ -2238,6 +2268,34 @@ export async function startTrackingRuntime(
     // the last-known positions that a later selected response will retain.
     if (!retainCurrentPositions) return effectiveScope.filterSnapshot(snapshot, now().toISOString())
     return operationalPositionRetention.apply(snapshot, effectiveScope, now(), contextKey)
+  }
+
+  /**
+   * Takes anyone no longer taking part off the live map as soon as the
+   * participation scope says so, instead of at the next poll, which may never
+   * come during an outage [DON-374]. It only narrows what is already on the
+   * map: nobody is added and no fix is refreshed, so nothing stale or from
+   * another server can reappear. A scope refresh that removes nobody does not
+   * republish.
+   */
+  function narrowLiveMapToParticipants(): void {
+    const last = lastPublishedOperational
+    if (last === null || last.contextKey !== currentOperationalContextKey()) return
+    if (!isOperationalMissionCurrent(currentOperationalMissionId())) return
+    const scope = dependencies.readParticipationScope?.()
+    if (scope === undefined || typeof scope.operationalDeviceIdsAt !== 'function') return
+    const observedAt = now().toISOString()
+    const takingPart = new Set(scope.operationalDeviceIdsAt(observedAt))
+    const shown = [
+      ...last.snapshot.devices,
+      ...last.snapshot.positions,
+      ...last.snapshot.breadcrumbs,
+    ]
+    // A later poll that falls back to the trusted scope must not redraw
+    // someone this removal took off the map.
+    trustedOperationalScope = { contextKey: last.contextKey, scope, acceptedAt: now().getTime() }
+    if (shown.every((entry) => takingPart.has(entry.device_id))) return
+    publishOperationalSnapshot(scope.filterSnapshot(last.snapshot, observedAt))
   }
 
   /** Keeps retained current positions isolated to one mission runtime context. */

@@ -31,6 +31,9 @@ export const CREDENTIAL_REENTRY_WORD = 'Re-enter password'
 /** The problem word for damaged saved settings that must be entered again (M-47). */
 export const SETTINGS_REENTRY_WORD = 'Re-enter settings'
 
+/** The problem word for a mission whose tracking is not connected: connect in Settings, Tracking sources [DON-375]. */
+export const CONNECT_WORD = 'Connect in Settings'
+
 /** A short problem word and how urgent it is. */
 export type RankedProblem = { readonly word: string; readonly rank: number }
 

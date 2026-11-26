@@ -74,4 +74,9 @@ describe('operator manual describes current behaviour [DON-301]', () => {
     expect(manual).toContain('Grey <strong>Tracking not connected</strong>')
     expect(manual).toContain('a missing stale count does not prove positions are fresh')
   })
+
+  it('says a running mission without tracking is red, and only the no-mission case is grey [DON-375]', () => {
+    expect(manual).toContain('<strong>TRACKING NOT CONNECTED: positions on the map are not updating; connect in Settings → Tracking sources</strong>')
+    expect(manual).toContain('Grey <strong>Tracking not connected</strong>, with no mission running')
+  })
 })

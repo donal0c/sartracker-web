@@ -134,8 +134,9 @@ test.describe('mission participants [DON-271]', () => {
     await bravoRow.getByTestId('participant-remove-confirm-btn').click()
     await expect(page.getByTestId('participant-active-list')).not.toContainText('Bravo Team')
 
+    // A removed person leaves People straight away; their saved fixes stay [DON-374].
     await injectSnapshotWithoutCurrentFixes(page)
-    await expect(page.getByTestId('ws-toggle-people')).toContainText('People 2')
+    await expect(page.getByTestId('ws-toggle-people')).toContainText('People 1')
     const retainedEvidenceDeviceIds = await page.evaluate(() =>
       window.__SARTRACKER_BROWSER_HARNESS__?.readState().positions.map((position) => position.device_id),
     )

@@ -1220,13 +1220,18 @@ function collectObservedCurrentGroupMembers(
   pendingEvents: readonly Omit<GroupMembershipEvent, 'id' | 'sequence' | 'mission_id'>[],
 ): readonly string[] {
   if (!rosterObservationReceived) return []
-  const selectedGroupIds = new Set(participants
-    .filter((participant) =>
-      participant.kind === 'group' &&
-      participant.traccar_group_id !== null &&
-      participant.effective_from <= observedAt &&
-      (participant.removed_at === null || observedAt < participant.removed_at))
+  const selectedGroups = participants.filter((participant) =>
+    participant.kind === 'group' &&
+    participant.effective_from <= observedAt &&
+    (participant.removed_at === null || observedAt < participant.removed_at))
+  const selectedGroupIds = new Set(selectedGroups
+    .filter((participant) => participant.traccar_group_id !== null)
     .map((participant) => participant.traccar_group_id!))
+  // A member awaiting its durable write counts only while their group is
+  // still selected; removing the group takes them off the map too [DON-374].
+  const selectedTeamIds = new Set(selectedGroups
+    .filter((participant) => participant.mission_team_id !== null)
+    .map((participant) => participant.mission_team_id!))
   return [...new Set([
     ...devices
     .filter((device) =>
@@ -1235,7 +1240,7 @@ function collectObservedCurrentGroupMembers(
       selectedGroupIds.has(device.group_id))
       .map((device) => device.device_id),
     ...pendingEvents
-      .filter((event) => event.change === 'member')
+      .filter((event) => event.change === 'member' && selectedTeamIds.has(event.mission_team_id))
       .map((event) => event.traccar_device_id),
   ])].sort()
 }

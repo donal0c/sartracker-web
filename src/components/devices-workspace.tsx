@@ -20,6 +20,7 @@ import {
   useTrackingStyleStore,
 } from '../features/tracking/tracking-style-store'
 import { useTrackingStore } from '../features/tracking/tracking-store'
+import { formatDevicePositionDisplay } from '../features/tracking/device-position-display'
 import { EXACT_BREADCRUMB_DOT_PAGE_LIMIT } from '../features/tracking/exact-breadcrumb-dot-controller'
 import { useIngestHealthStore } from '../features/tracking/ingest-health-store'
 import { useLayerVisibilityStore } from '../features/layers/layer-visibility-store'
@@ -388,13 +389,10 @@ function DevicesWorkspaceContent(props: {
                   <Detail label="GPS Accuracy" value={selectedRow.accuracyDisplay} />
                   <Detail label="Battery" value={selectedRow.batteryDisplay} />
                   <Detail label="Speed" value={selectedRow.speedDisplay} />
-                  <Detail
-                    label="Coordinates"
-                    value={
-                      selectedRow.latitude === null || selectedRow.longitude === null
-                        ? 'No position'
-                        : `${selectedRow.latitude.toFixed(5)}, ${selectedRow.longitude.toFixed(5)}`
-                    }
+                  <DevicePositionDetail
+                    deviceId={selectedRow.deviceId}
+                    latitude={selectedRow.latitude}
+                    longitude={selectedRow.longitude}
                   />
                 </dl>
 
@@ -678,6 +676,51 @@ function Detail(props: {
         data-testid={props.testId}
       >
         {props.value}
+      </dd>
+    </div>
+  )
+}
+
+/**
+ * The selected device's position: Irish Grid first and large, decimal lat/lon beneath
+ * [DON-377]. Formatting lives in `formatDevicePositionDisplay`; this only lays it out.
+ */
+function DevicePositionDetail(props: {
+  readonly deviceId: string
+  readonly latitude: number | null
+  readonly longitude: number | null
+}) {
+  const display = formatDevicePositionDisplay(props.latitude, props.longitude)
+  return (
+    <div
+      className="border-t border-stone-800 pt-3"
+      data-position-kind={display.kind}
+      data-testid={`device-inspector-position-${props.deviceId}`}
+    >
+      <dt className="sar-meta-label">Position</dt>
+      <dd className="mt-1">
+        {display.kind === 'irish_grid' ? <span className="sr-only">Irish Grid </span> : null}
+        <span
+          className={
+            display.kind === 'irish_grid'
+              ? 'block whitespace-nowrap font-mono text-xl font-semibold text-stone-50'
+              : 'block font-mono text-base font-semibold text-amber-100'
+          }
+          data-testid={`device-inspector-grid-${props.deviceId}`}
+        >
+          {display.primary}
+        </span>
+        {display.secondary === null ? null : (
+          <>
+            <span className="sr-only">Latitude, longitude </span>
+            <span
+              className="mt-0.5 block font-mono text-xs text-stone-300"
+              data-testid={`device-inspector-latlon-${props.deviceId}`}
+            >
+              {display.secondary}
+            </span>
+          </>
+        )}
       </dd>
     </div>
   )

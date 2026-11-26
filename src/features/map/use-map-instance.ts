@@ -33,11 +33,17 @@ import { recordDiagnosticEvent } from '../diagnostics/diagnostic-event-log'
 export type HoverCoordinate = {
   readonly latitude: number | null
   readonly longitude: number | null
+  /**
+   * Whose position this is: the ground under the pointer, or the map centre before the pointer
+   * has been over the map. The bar says which, so neither is read out as a person's (DON-372).
+   */
+  readonly source: 'cursor' | 'map-centre'
 }
 
 const EMPTY_HOVER_COORDINATE: HoverCoordinate = {
   latitude: null,
   longitude: null,
+  source: 'cursor',
 }
 
 export type MapInstanceController = {
@@ -207,12 +213,57 @@ export function useMapInstance(): MapInstanceController {
     const stopTrackingSourceErrorReport = reportTrackingSourceErrors(map)
 
     map.addControl(new maplibregl.NavigationControl({ visualizePitch: true }), 'top-right')
+    // The pointer is tracked with DOM pointer events on the map element, which keep firing during
+    // a drag (MapLibre suppresses its own mousemove while panning), in screen pixels so a camera
+    // move or a layout change re-reads the ground under it (DON-372).
+    const mapElement = containerRef.current
+    let pointerOnScreen: { readonly clientX: number; readonly clientY: number } | null = null
+    let pointerHasBeenOnMap = false
+    const clearCursorReading = () => {
+      pointerOnScreen = null
+      scheduleHoverCoordinate(EMPTY_HOVER_COORDINATE)
+    }
+    const rereadUnderPointer = () => {
+      if (pointerOnScreen === null) {
+        if (pendingHoverCoordinateRef.current.source === 'map-centre') {
+          const center = map.getCenter()
+          scheduleHoverCoordinate({ latitude: center.lat, longitude: center.lng, source: 'map-centre' })
+        }
+        return
+      }
+      // Over a panel, control or warning instead of the map itself: no cursor reading.
+      const canvasContainer = map.getCanvasContainer()
+      const under = document.elementFromPoint(pointerOnScreen.clientX, pointerOnScreen.clientY)
+      if (under === null || !canvasContainer.contains(under)) {
+        scheduleHoverCoordinate(EMPTY_HOVER_COORDINATE)
+        return
+      }
+      const box = canvasContainer.getBoundingClientRect()
+      const ground = map.unproject([pointerOnScreen.clientX - box.left, pointerOnScreen.clientY - box.top])
+      scheduleHoverCoordinate({ latitude: ground.lat, longitude: ground.lng, source: 'cursor' })
+    }
+    const handlePointerMove = (event: PointerEvent) => {
+      pointerHasBeenOnMap = true
+      pointerOnScreen = { clientX: event.clientX, clientY: event.clientY }
+      rereadUnderPointer()
+    }
+    mapElement.addEventListener('pointermove', handlePointerMove)
+    mapElement.addEventListener('pointerleave', clearCursorReading)
+    map.on('move', rereadUnderPointer)
+    map.on('resize', rereadUnderPointer)
     map.on('load', () => {
+      // Until the pointer is over the map, the bar shows the map centre and says so. Once the
+      // pointer has been on the map (even while it was loading), the bar is the cursor's (DON-372).
+      if (pointerHasBeenOnMap) {
+        return
+      }
       const center = map.getCenter()
-      setHoverCoordinate({
+      pendingHoverCoordinateRef.current = {
         latitude: center.lat,
         longitude: center.lng,
-      })
+        source: 'map-centre',
+      }
+      setHoverCoordinate(pendingHoverCoordinateRef.current)
     })
     map.on('idle', () => {
       if (styleFailureRef.current !== null) return
@@ -269,15 +320,6 @@ export function useMapInstance(): MapInstanceController {
       }
       hoverCoordinateFrameRef.current = window.requestAnimationFrame(publishPendingHoverCoordinate)
     }
-    map.on('mousemove', (event) => {
-      scheduleHoverCoordinate({
-        latitude: event.lngLat.lat,
-        longitude: event.lngLat.lng,
-      })
-    })
-    map.on('mouseleave', () => {
-      scheduleHoverCoordinate(EMPTY_HOVER_COORDINATE)
-    })
 
     mapRef.current = map
     window.setTimeout(() => {
@@ -294,6 +336,8 @@ export function useMapInstance(): MapInstanceController {
         hoverCoordinateFrameRef.current = null
       }
       stopTrackingSourceErrorReport()
+      mapElement.removeEventListener('pointermove', handlePointerMove)
+      mapElement.removeEventListener('pointerleave', clearCursorReading)
       map.remove()
       if (typeof window !== 'undefined') {
         delete (window as Window & { __SARTRACKER_MAP__?: maplibregl.Map }).__SARTRACKER_MAP__
