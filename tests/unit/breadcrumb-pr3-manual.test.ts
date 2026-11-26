@@ -29,7 +29,7 @@ describe('breadcrumb PR-3 operator manual [DON-275]', () => {
 
     for (const required of [
       'Finish can be refused',
-      'Mission cannot be finished while 2 participant history backfill',
+      "Can't finish yet. SAR Tracker is still fetching earlier tracks for 2 people",
       'Complete</strong> or <strong>100%',
       'Record Gap &amp; Allow Archive',
       'Open Admin Roster Settings',
