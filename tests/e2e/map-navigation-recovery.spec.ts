@@ -67,15 +67,49 @@ test('basemap replacement during animated Go To settles at the destination [AUD-
 })
 
 test('a never-loaded target expires and cannot reappear when the map recovers [AUD-06]', async ({ page }) => {
+  // DIAGNOSTIC (temporary): record map identity, style and context events.
+  await page.addInitScript(() => {
+    const w = window as unknown as Record<string, unknown>
+    const log: string[] = []
+    w.__AUD06_LOG__ = log
+    let current: { on: (e: string, f: () => void) => void, getStyle: () => { layers?: unknown[] } | undefined } | undefined
+    let n = 0
+    const layers = (m: typeof current) => { try { return String(m?.getStyle()?.layers?.length ?? 'none') } catch { return 'throw' } }
+    Object.defineProperty(window, '__SARTRACKER_MAP__', {
+      configurable: true,
+      get: () => current,
+      set: (v) => {
+        current = v
+        n += 1
+        const id = n
+        log.push(`${Math.round(performance.now())} map#${id} ${v === undefined ? 'unset' : 'set'}`)
+        if (v === undefined) return
+        for (const e of ['style.load', 'styledataloading', 'styledata', 'webglcontextlost', 'webglcontextrestored', 'remove', 'error']) {
+          v.on(e, () => log.push(`${Math.round(performance.now())} map#${id} ${e} layers=${layers(v)}`))
+        }
+      },
+    })
+  })
   await page.clock.install()
   await page.route('https://**/*', (route) => route.abort())
   await page.goto('/?missionHarness=1')
   await expect(page.getByTestId('app-title')).toBeVisible()
   await page.waitForFunction(() => window.__SARTRACKER_MAP__ !== undefined)
+  const mark = (label: string) => page.evaluate((text) => {
+    const w = window as unknown as Record<string, string[]>
+    let count = 'none'
+    try { count = String(window.__SARTRACKER_MAP__?.getStyle()?.layers?.length ?? 'none') } catch { count = 'throw' }
+    w.__AUD06_LOG__.push(`${Math.round(performance.now())} MARK ${text} layers=${count}`)
+  }, label)
+  await mark('before setStyle(null)')
   await page.evaluate(() => window.__SARTRACKER_MAP__!.setStyle(null))
+  await mark('after setStyle(null)')
   await navigateTo(page, '52.179337', '-9.464944')
+  await mark('after navigateTo')
+  const diagnostic = await page.evaluate(() => (window as unknown as Record<string, string[]>).__AUD06_LOG__.join('\n'))
+  console.log(`AUD-06 diagnostic (attached=${String((await pendingTarget(page))?.attached)}):\n${diagnostic}`)
   // The style is gone, so the target is queued but cannot attach yet.
-  expect(await pendingTarget(page)).toEqual({ latitude: 52.179337, longitude: -9.464944, attached: false })
+  expect(await pendingTarget(page), `AUD-06 diagnostic log:\n${diagnostic}`).toEqual({ latitude: 52.179337, longitude: -9.464944, attached: false })
   // Let its 30 s request lifetime run out.
   await page.clock.fastForward(30_001)
   await expect.poll(() => pendingTarget(page)).toBeNull()
