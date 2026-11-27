@@ -28,7 +28,7 @@ import {
 import { openMissionReview, openParticipantPickers, openWorkspacePanel } from '../../workspace-panels.mjs'
 import { assessDiagnosticsReport, exportDiagnosticsReport, parseDiagnosticsReport } from '../lib/diagnostics-report.mjs'
 import { historyLoaded, historySettled, historyStillLoading, noEarlierHistoryAsked } from '../lib/history-status.mjs'
-import { expectProduct, NotTested } from '../lib/results.mjs'
+import { expectProduct, keepFindings, NotTested } from '../lib/results.mjs'
 import { missionFixes, withStore } from '../lib/store.mjs'
 import { TEAM_DEVICES, TEAM_GROUPS, startTeamTraccar } from '../lib/team-traccar.mjs'
 
@@ -124,16 +124,65 @@ export async function waitForBackfill(page, budgetMs) {
   return { seconds: null, statuses }
 }
 
+/**
+ * Clicks the map canvas at a position relative to the canvas with Playwright's
+ * normal waiting. If the click still fails because something on top (the map
+ * warnings list, a panel) covers the point, the check is NOT TESTED and names
+ * the cover: the warnings list grows with the number of people needing
+ * attention, so fixed points can land under it.
+ * @param {import('playwright').Page} page
+ * @param {{ x: number, y: number }} position
+ * @param {{ button?: 'left' | 'right' }} [options]
+ */
+export async function clickMap(page, position, options = {}) {
+  const canvas = page.locator('.maplibregl-canvas').first()
+  try {
+    await canvas.click({ position, timeout: 15_000, ...options })
+  } catch (error) {
+    const cover = await canvas.evaluate((element, point) => {
+      const box = element.getBoundingClientRect()
+      const hit = document.elementFromPoint(box.left + point.x, box.top + point.y)
+      if (hit === null || hit === element) return null
+      const owner = hit.closest('[data-testid]')
+      return owner?.getAttribute('data-testid') ?? hit.tagName.toLowerCase()
+    }, position).catch(() => null)
+    if (cover !== null) {
+      throw new NotTested(`map point (${position.x}, ${position.y}) is covered by "${cover}"; move the smoke's click point`)
+    }
+    throw error
+  }
+}
+
+/**
+ * Finds two clear map points about 140 px apart, scanning the canvas, so a
+ * tool panel or the warnings list never takes a measure click.
+ * @param {import('playwright').Page} page
+ * @returns {Promise<[{ x: number, y: number }, { x: number, y: number }]>}
+ */
+async function findClearMapPair(page) {
+  const pair = await page.locator('.maplibregl-canvas').first().evaluate((element) => {
+    const box = element.getBoundingClientRect()
+    const clear = (x, y) => document.elementFromPoint(box.left + x, box.top + y) === element
+    for (let y = Math.round(box.height * 0.3); y < box.height * 0.85; y += 40) {
+      for (let x = Math.round(box.width * 0.15); x < box.width * 0.75; x += 40) {
+        if (clear(x, y) && clear(x + 140, y + 60)) return [{ x, y }, { x: x + 140, y: y + 60 }]
+      }
+    }
+    return null
+  })
+  if (pair === null) throw new NotTested('no clear pair of map points for Measure; panels cover the map')
+  return pair
+}
+
 /** Draws a three-point search area and saves it with a name. */
 async function drawSearchArea(page, name) {
-  const canvas = page.locator('.maplibregl-canvas').first()
   await page.getByTestId('drawing-toolbar-expand').click().catch(() => {})
   await page.getByTestId('drawing-tool-search_area').click()
   for (const position of [{ x: 440, y: 220 }, { x: 620, y: 220 }, { x: 540, y: 360 }]) {
-    await canvas.click({ position })
+    await clickMap(page, position)
     await delay(300)
   }
-  await canvas.click({ position: { x: 540, y: 360 }, button: 'right' })
+  await clickMap(page, { x: 540, y: 360 }, { button: 'right' })
   await page.getByTestId('drawing-dialog').waitFor({ timeout: 10_000 })
   await page.getByTestId('drawing-name-input').fill(name)
   await page.getByTestId('drawing-save-btn').click()
@@ -145,7 +194,7 @@ async function drawSearchArea(page, name) {
 /** Places a casualty marker, first confirming save is blocked until required fields are set. */
 export async function placeCasualty(page, { name, x, y }) {
   const t = (id) => page.getByTestId(id)
-  await page.locator('.maplibregl-canvas').first().click({ position: { x, y } })
+  await clickMap(page, { x, y })
   await t('marker-dialog').waitFor({ timeout: 10_000 })
   await t('marker-dialog').getByText('Casualty', { exact: true }).click()
   await t('marker-name-input').fill(name)
@@ -160,7 +209,7 @@ export async function placeCasualty(page, { name, x, y }) {
 /** Opens the marker at a point and deletes it through the two-stage confirmation. */
 async function deleteMarkerAt(page, { x, y }) {
   const t = (id) => page.getByTestId(id)
-  await page.locator('.maplibregl-canvas').first().click({ position: { x, y } })
+  await clickMap(page, { x, y })
   await t('marker-dialog').waitFor({ timeout: 10_000 })
   await t('marker-delete-btn').click()
   const confirmationShown = await t('marker-delete-confirmation').isVisible()
@@ -201,6 +250,18 @@ export default [
     ],
     async run(ctx) {
       const findings = []
+      try {
+        return await this.scenario(ctx, findings)
+      } catch (error) {
+        throw keepFindings(findings, error)
+      }
+    },
+    /**
+     * The scenario itself; product failures go into findings as they are seen.
+     * @param {object} ctx
+     * @param {string[]} findings
+     */
+    async scenario(ctx, findings) {
       const notes = []
       const mock = await startTeamTraccar()
       ctx.cleanups.push(() => mock.close())
@@ -505,16 +566,22 @@ export default [
       await delay(45_000)
 
       // Map Tools after a relaunch on a lived-in catalog (DON-118): Measure must work.
-      const canvas = app.page.locator('.maplibregl-canvas').first()
+      // Measure points are found, not fixed: the warnings list stacks down the
+      // right-hand side as people stop moving, and the Measure panel opens too.
       await app.page.getByTestId('drawing-toolbar-expand').click().catch(() => {})
       await app.page.getByTestId('drawing-tool-measure').click()
-      await canvas.click({ position: { x: 680, y: 240 } })
+      await delay(500)
+      const [measureFrom, measureTo] = await findClearMapPair(app.page)
+      await clickMap(app.page, measureFrom)
       await delay(400)
-      await canvas.click({ position: { x: 820, y: 300 } })
+      await clickMap(app.page, measureTo)
       await delay(1500)
-      const measured = (await app.page.getByTestId('measurement-count').innerText().catch(() => '0')).trim()
-      await app.shot('measure-after-relaunch')
+      // A count that cannot be read is missing evidence, not a wrong count.
+      const measured = (await app.page.getByTestId('measurement-count').innerText({ timeout: 10_000 }).catch((error) => {
+        throw new NotTested(`the Measure count could not be read after relaunch: ${error.message.split('\n')[0]}`)
+      })).trim()
       if (measured !== '1') findings.push(`Measure after relaunch recorded ${measured} measurements, expected 1`)
+      await app.shot('measure-after-relaunch')
       await app.page.getByTestId('drawing-toolbar-collapse').click().catch(() => {})
       await delay(500)
 
@@ -530,14 +597,22 @@ export default [
       await app.page.getByTestId('mission-replay-time').fill(localInput(missionStart + 24 * HOUR))
       await app.page.getByTestId('mission-replay-seek').click()
       await delay(8000)
-      const replayState = (await app.page.getByTestId('mission-replay-reconstructed-state').innerText().catch(() => '')).replace(/\s+/gu, ' ')
-      const replayError = await app.page.getByTestId('mission-replay-error').innerText().catch(() => null)
+      // Wait for either outcome in one window: an error Replay shows is a product
+      // result; neither the error nor the state appearing is missing evidence.
+      await app.page.locator('[data-testid="mission-replay-error"], [data-testid="mission-replay-reconstructed-state"]').first()
+        .waitFor({ timeout: 10_000 }).catch((error) => {
+          throw new NotTested(`Replay showed neither its state nor an error: ${error.message.split('\n')[0]}`)
+        })
+      const replayError = await app.page.getByTestId('mission-replay-error').innerText({ timeout: 1_000 }).catch(() => null)
+      const replayState = replayError !== null ? '' : (await app.page.getByTestId('mission-replay-reconstructed-state').innerText({ timeout: 5_000 }).catch((error) => {
+        throw new NotTested(`the Replay state could not be read: ${error.message.split('\n')[0]}`)
+      })).replace(/\s+/gu, ' ')
+      if (replayError !== null || replayState === '') findings.push(`replay 24 h into the backfilled window failed: ${replayError ?? 'empty state'}`)
       const replayRecords = /(\d+) \/ (\d+) selected-time records read/u.exec(await bodyText(app.page))
       await app.shot('replay-day-1')
       const leftReplay = await returnReplayToLive(app.page)
       if (leftReplay !== 'live') findings.push(`Return to Live / now did not bring back the live map context (${leftReplay})`)
       await closeWorkspace(app.page)
-      if (replayError !== null || replayState === '') findings.push(`replay 24 h into the backfilled window failed: ${replayError ?? 'empty state'}`)
       // Replay folds evidence at max(fixTime, recorded_at), so history fetched by
       // the lookback backfill is not "known" at earlier replay times. Whether the
       // team expects tracks there is an open question (DON-293); report the count.
@@ -602,10 +677,14 @@ export default [
       await app.page.getByTestId('archive-review-secret').fill(recoveryCode)
       await app.page.getByTestId('archive-review-open').click()
       const reopened = await app.page.getByTestId('mission-review-archive-banner')
-        .waitFor({ timeout: 90_000 }).then(() => true, () => false)
+        .waitFor({ timeout: 90_000 }).then(() => true, (error) => {
+          // Not open after 90 s is the product result; anything else (a closed window) is missing evidence.
+          if (error?.name === 'TimeoutError') return false
+          throw new NotTested(`the archive reopen could not be watched: ${error?.message?.split('\n')[0] ?? error}`)
+        })
+      if (!reopened) findings.push('the archive did not reopen with its recovery code')
       await app.shot('reopened-with-recovery-code')
       await app.stop()
-      if (!reopened) findings.push('the archive did not reopen with its recovery code')
 
       const statuses = withStore(profile, (db) => Object.fromEntries(db.prepare('SELECT name, status FROM missions').all().map((row) => [row.name, row.status])))
       if (statuses[MISSION] !== 'finalized' || statuses['Yesterday Training'] !== 'finished') {
