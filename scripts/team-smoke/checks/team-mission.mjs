@@ -28,7 +28,7 @@ import {
 import { openMissionReview, openParticipantPickers, openWorkspacePanel } from '../../workspace-panels.mjs'
 import { assessDiagnosticsReport, exportDiagnosticsReport, parseDiagnosticsReport } from '../lib/diagnostics-report.mjs'
 import { historyLoaded, historySettled, historyStillLoading, noEarlierHistoryAsked } from '../lib/history-status.mjs'
-import { expectProduct, NotTested } from '../lib/results.mjs'
+import { expectProduct, keepFindings, NotTested } from '../lib/results.mjs'
 import { missionFixes, withStore } from '../lib/store.mjs'
 import { TEAM_DEVICES, TEAM_GROUPS, startTeamTraccar } from '../lib/team-traccar.mjs'
 
@@ -125,27 +125,32 @@ export async function waitForBackfill(page, budgetMs) {
 }
 
 /**
- * Clicks the map canvas at a position relative to the canvas, after checking
- * nothing on top (the map warnings list, a panel) covers that point. A covered
- * point is a tool problem, not a product result: the warnings list grows with
- * the number of people needing attention, so fixed points can land under it.
+ * Clicks the map canvas at a position relative to the canvas with Playwright's
+ * normal waiting. If the click still fails because something on top (the map
+ * warnings list, a panel) covers the point, the check is NOT TESTED and names
+ * the cover: the warnings list grows with the number of people needing
+ * attention, so fixed points can land under it.
  * @param {import('playwright').Page} page
  * @param {{ x: number, y: number }} position
  * @param {{ button?: 'left' | 'right' }} [options]
  */
-async function clickMap(page, position, options = {}) {
+export async function clickMap(page, position, options = {}) {
   const canvas = page.locator('.maplibregl-canvas').first()
-  const cover = await canvas.evaluate((element, point) => {
-    const box = element.getBoundingClientRect()
-    const hit = document.elementFromPoint(box.left + point.x, box.top + point.y)
-    if (hit === null || hit === element) return null
-    const owner = hit.closest('[data-testid]')
-    return owner?.getAttribute('data-testid') ?? hit.tagName.toLowerCase()
-  }, position)
-  if (cover !== null) {
-    throw new NotTested(`map point (${position.x}, ${position.y}) is covered by "${cover}"; move the smoke's click point`)
+  try {
+    await canvas.click({ position, timeout: 15_000, ...options })
+  } catch (error) {
+    const cover = await canvas.evaluate((element, point) => {
+      const box = element.getBoundingClientRect()
+      const hit = document.elementFromPoint(box.left + point.x, box.top + point.y)
+      if (hit === null || hit === element) return null
+      const owner = hit.closest('[data-testid]')
+      return owner?.getAttribute('data-testid') ?? hit.tagName.toLowerCase()
+    }, position).catch(() => null)
+    if (cover !== null) {
+      throw new NotTested(`map point (${position.x}, ${position.y}) is covered by "${cover}"; move the smoke's click point`)
+    }
+    throw error
   }
-  await canvas.click({ position, ...options })
 }
 
 /**
@@ -245,6 +250,18 @@ export default [
     ],
     async run(ctx) {
       const findings = []
+      try {
+        return await this.scenario(ctx, findings)
+      } catch (error) {
+        throw keepFindings(findings, error)
+      }
+    },
+    /**
+     * The scenario itself; product failures go into findings as they are seen.
+     * @param {object} ctx
+     * @param {string[]} findings
+     */
+    async scenario(ctx, findings) {
       const notes = []
       const mock = await startTeamTraccar()
       ctx.cleanups.push(() => mock.close())

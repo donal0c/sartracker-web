@@ -41,6 +41,20 @@ export function expectProduct(condition, message) {
   }
 }
 
+/**
+ * Keeps product failures already found when a later step cannot run: a check
+ * that queued findings and then stopped on a tool problem is still a FAIL, with
+ * the stopped step named, never a bare NOT TESTED.
+ * @param {string[]} findings product failures found so far
+ * @param {unknown} error what stopped the check
+ * @returns {unknown} the error to throw
+ */
+export function keepFindings(findings, error) {
+  if (findings.length === 0 || error instanceof ProductFailure) return error
+  const reason = error instanceof Error ? error.message.split('\n')[0] : String(error)
+  return new ProductFailure(`${findings.join('; ')}. The run then stopped before its remaining steps (not tested): ${reason}`)
+}
+
 /** Keeps an automated subset distinct from a fully completed checklist row. */
 export function completedCheck(check, evidence) {
   const remaining = check.manualSteps ?? []
