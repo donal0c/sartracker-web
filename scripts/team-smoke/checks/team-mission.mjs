@@ -576,7 +576,10 @@ export default [
       await delay(400)
       await clickMap(app.page, measureTo)
       await delay(1500)
-      const measured = (await app.page.getByTestId('measurement-count').innerText().catch(() => '0')).trim()
+      // A count that cannot be read is missing evidence, not a wrong count.
+      const measured = (await app.page.getByTestId('measurement-count').innerText({ timeout: 10_000 }).catch((error) => {
+        throw new NotTested(`the Measure count could not be read after relaunch: ${error.message.split('\n')[0]}`)
+      })).trim()
       await app.shot('measure-after-relaunch')
       if (measured !== '1') findings.push(`Measure after relaunch recorded ${measured} measurements, expected 1`)
       await app.page.getByTestId('drawing-toolbar-collapse').click().catch(() => {})
@@ -594,8 +597,12 @@ export default [
       await app.page.getByTestId('mission-replay-time').fill(localInput(missionStart + 24 * HOUR))
       await app.page.getByTestId('mission-replay-seek').click()
       await delay(8000)
-      const replayState = (await app.page.getByTestId('mission-replay-reconstructed-state').innerText().catch(() => '')).replace(/\s+/gu, ' ')
-      const replayError = await app.page.getByTestId('mission-replay-error').innerText().catch(() => null)
+      // An error shown by Replay is a product result; a state that cannot be read without one is missing evidence.
+      const replayError = await app.page.getByTestId('mission-replay-error').innerText({ timeout: 2_000 }).catch(() => null)
+      const replayState = (await app.page.getByTestId('mission-replay-reconstructed-state').innerText({ timeout: 10_000 }).catch((error) => {
+        if (replayError !== null) return ''
+        throw new NotTested(`the Replay state could not be read: ${error.message.split('\n')[0]}`)
+      })).replace(/\s+/gu, ' ')
       const replayRecords = /(\d+) \/ (\d+) selected-time records read/u.exec(await bodyText(app.page))
       await app.shot('replay-day-1')
       const leftReplay = await returnReplayToLive(app.page)
@@ -666,7 +673,11 @@ export default [
       await app.page.getByTestId('archive-review-secret').fill(recoveryCode)
       await app.page.getByTestId('archive-review-open').click()
       const reopened = await app.page.getByTestId('mission-review-archive-banner')
-        .waitFor({ timeout: 90_000 }).then(() => true, () => false)
+        .waitFor({ timeout: 90_000 }).then(() => true, (error) => {
+          // Not open after 90 s is the product result; anything else (a closed window) is missing evidence.
+          if (error?.name === 'TimeoutError') return false
+          throw new NotTested(`the archive reopen could not be watched: ${error?.message?.split('\n')[0] ?? error}`)
+        })
       await app.shot('reopened-with-recovery-code')
       await app.stop()
       if (!reopened) findings.push('the archive did not reopen with its recovery code')
