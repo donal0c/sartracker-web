@@ -124,16 +124,60 @@ export async function waitForBackfill(page, budgetMs) {
   return { seconds: null, statuses }
 }
 
+/**
+ * Clicks the map canvas at a position relative to the canvas, after checking
+ * nothing on top (the map warnings list, a panel) covers that point. A covered
+ * point is a tool problem, not a product result: the warnings list grows with
+ * the number of people needing attention, so fixed points can land under it.
+ * @param {import('playwright').Page} page
+ * @param {{ x: number, y: number }} position
+ * @param {{ button?: 'left' | 'right' }} [options]
+ */
+async function clickMap(page, position, options = {}) {
+  const canvas = page.locator('.maplibregl-canvas').first()
+  const cover = await canvas.evaluate((element, point) => {
+    const box = element.getBoundingClientRect()
+    const hit = document.elementFromPoint(box.left + point.x, box.top + point.y)
+    if (hit === null || hit === element) return null
+    const owner = hit.closest('[data-testid]')
+    return owner?.getAttribute('data-testid') ?? hit.tagName.toLowerCase()
+  }, position)
+  if (cover !== null) {
+    throw new NotTested(`map point (${position.x}, ${position.y}) is covered by "${cover}"; move the smoke's click point`)
+  }
+  await canvas.click({ position, ...options })
+}
+
+/**
+ * Finds two clear map points about 140 px apart, scanning the canvas, so a
+ * tool panel or the warnings list never takes a measure click.
+ * @param {import('playwright').Page} page
+ * @returns {Promise<[{ x: number, y: number }, { x: number, y: number }]>}
+ */
+async function findClearMapPair(page) {
+  const pair = await page.locator('.maplibregl-canvas').first().evaluate((element) => {
+    const box = element.getBoundingClientRect()
+    const clear = (x, y) => document.elementFromPoint(box.left + x, box.top + y) === element
+    for (let y = Math.round(box.height * 0.3); y < box.height * 0.85; y += 40) {
+      for (let x = Math.round(box.width * 0.15); x < box.width * 0.75; x += 40) {
+        if (clear(x, y) && clear(x + 140, y + 60)) return [{ x, y }, { x: x + 140, y: y + 60 }]
+      }
+    }
+    return null
+  })
+  if (pair === null) throw new NotTested('no clear pair of map points for Measure; panels cover the map')
+  return pair
+}
+
 /** Draws a three-point search area and saves it with a name. */
 async function drawSearchArea(page, name) {
-  const canvas = page.locator('.maplibregl-canvas').first()
   await page.getByTestId('drawing-toolbar-expand').click().catch(() => {})
   await page.getByTestId('drawing-tool-search_area').click()
   for (const position of [{ x: 440, y: 220 }, { x: 620, y: 220 }, { x: 540, y: 360 }]) {
-    await canvas.click({ position })
+    await clickMap(page, position)
     await delay(300)
   }
-  await canvas.click({ position: { x: 540, y: 360 }, button: 'right' })
+  await clickMap(page, { x: 540, y: 360 }, { button: 'right' })
   await page.getByTestId('drawing-dialog').waitFor({ timeout: 10_000 })
   await page.getByTestId('drawing-name-input').fill(name)
   await page.getByTestId('drawing-save-btn').click()
@@ -145,7 +189,7 @@ async function drawSearchArea(page, name) {
 /** Places a casualty marker, first confirming save is blocked until required fields are set. */
 export async function placeCasualty(page, { name, x, y }) {
   const t = (id) => page.getByTestId(id)
-  await page.locator('.maplibregl-canvas').first().click({ position: { x, y } })
+  await clickMap(page, { x, y })
   await t('marker-dialog').waitFor({ timeout: 10_000 })
   await t('marker-dialog').getByText('Casualty', { exact: true }).click()
   await t('marker-name-input').fill(name)
@@ -160,7 +204,7 @@ export async function placeCasualty(page, { name, x, y }) {
 /** Opens the marker at a point and deletes it through the two-stage confirmation. */
 async function deleteMarkerAt(page, { x, y }) {
   const t = (id) => page.getByTestId(id)
-  await page.locator('.maplibregl-canvas').first().click({ position: { x, y } })
+  await clickMap(page, { x, y })
   await t('marker-dialog').waitFor({ timeout: 10_000 })
   await t('marker-delete-btn').click()
   const confirmationShown = await t('marker-delete-confirmation').isVisible()
@@ -505,12 +549,15 @@ export default [
       await delay(45_000)
 
       // Map Tools after a relaunch on a lived-in catalog (DON-118): Measure must work.
-      const canvas = app.page.locator('.maplibregl-canvas').first()
+      // Measure points are found, not fixed: the warnings list stacks down the
+      // right-hand side as people stop moving, and the Measure panel opens too.
       await app.page.getByTestId('drawing-toolbar-expand').click().catch(() => {})
       await app.page.getByTestId('drawing-tool-measure').click()
-      await canvas.click({ position: { x: 680, y: 240 } })
+      await delay(500)
+      const [measureFrom, measureTo] = await findClearMapPair(app.page)
+      await clickMap(app.page, measureFrom)
       await delay(400)
-      await canvas.click({ position: { x: 820, y: 300 } })
+      await clickMap(app.page, measureTo)
       await delay(1500)
       const measured = (await app.page.getByTestId('measurement-count').innerText().catch(() => '0')).trim()
       await app.shot('measure-after-relaunch')
