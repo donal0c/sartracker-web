@@ -75,6 +75,20 @@ test('a never-loaded target expires and cannot reappear when the map recovers [A
     let current: { on: (e: string, f: () => void) => void, getStyle: () => { layers?: unknown[] } | undefined } | undefined
     let n = 0
     const layers = (m: typeof current) => { try { return String(m?.getStyle()?.layers?.length ?? 'none') } catch { return 'throw' } }
+    new MutationObserver((records) => {
+      for (const record of records) {
+        for (const node of [...record.addedNodes].map((n) => ['add', n] as const).concat([...record.removedNodes].map((n) => ['remove', n] as const))) {
+          const [kind, element] = node
+          if (!(element instanceof Element)) continue
+          const canvases = element.matches('.maplibregl-canvas, .maplibregl-map') ? 1 : element.querySelectorAll('.maplibregl-canvas').length
+          const shell = element.matches('[data-testid="app-shell"], [data-testid="simplified-workspace"]') || element.querySelector('[data-testid="app-shell"]') !== null
+          if (canvases > 0 || shell) {
+            const text = (document.body.innerText || '').replace(/\s+/gu, ' ').slice(0, 80)
+            log.push(`${Math.round(performance.now())} DOM ${kind} ${element.tagName.toLowerCase()}.${String(element.className).slice(0, 40)} canvases=${canvases} shell=${shell} body="${text}"`)
+          }
+        }
+      }
+    }).observe(document, { childList: true, subtree: true })
     Object.defineProperty(window, '__SARTRACKER_MAP__', {
       configurable: true,
       get: () => current,
@@ -99,7 +113,10 @@ test('a never-loaded target expires and cannot reappear when the map recovers [A
     const w = window as unknown as Record<string, string[]>
     let count = 'none'
     try { count = String(window.__SARTRACKER_MAP__?.getStyle()?.layers?.length ?? 'none') } catch { count = 'throw' }
-    w.__AUD06_LOG__.push(`${Math.round(performance.now())} MARK ${text} layers=${count}`)
+    const saved = (window as unknown as Record<string, unknown>).__AUD06_SAVED__
+    if (saved === undefined) (window as unknown as Record<string, unknown>).__AUD06_SAVED__ = window.__SARTRACKER_MAP__
+    const same = saved === undefined ? 'first' : String(saved === window.__SARTRACKER_MAP__)
+    w.__AUD06_LOG__.push(`${Math.round(performance.now())} MARK ${text} layers=${count} sameMap=${same} canvases=${document.querySelectorAll('.maplibregl-canvas').length}`)
   }, label)
   await mark('before setStyle(null)')
   await page.evaluate(() => window.__SARTRACKER_MAP__!.setStyle(null))
