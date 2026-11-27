@@ -75,6 +75,31 @@ test('a never-loaded target expires and cannot reappear when the map recovers [A
     let current: { on: (e: string, f: () => void) => void, getStyle: () => { layers?: unknown[] } | undefined } | undefined
     let n = 0
     const layers = (m: typeof current) => { try { return String(m?.getStyle()?.layers?.length ?? 'none') } catch { return 'throw' } }
+    const hooked = new WeakSet<object>()
+    let hookCount = 0
+    window.setInterval(() => {
+      const m = (window as unknown as Record<string, Record<string, unknown> | undefined>).__SARTRACKER_MAP__
+      if (m === undefined || hooked.has(m)) return
+      hooked.add(m)
+      hookCount += 1
+      const id = `live#${hookCount}`
+      const count = () => { try { return String((m.getStyle as () => { layers?: unknown[] } | undefined)()?.layers?.length ?? 'none') } catch { return 'throw' } }
+      log.push(`${Math.round(performance.now())} ${id} hooked layers=${count()}`)
+      for (const name of ['setStyle', '_updateStyle', '_diffStyle']) {
+        const original = m[name] as ((...args: unknown[]) => unknown) | undefined
+        if (typeof original !== 'function') continue
+        m[name] = function (this: unknown, ...args: unknown[]) {
+          const arg = args[0] === null ? 'null' : typeof args[0] === 'string' ? 'url' : `style(${((args[0] as { layers?: unknown[] })?.layers ?? []).length} layers)`
+          const stack = (new Error().stack ?? '').split('\n').slice(2, 9).map((line) => line.trim().replace(/https?:\/\/[^/]+/u, '')).join(' | ')
+          log.push(`${Math.round(performance.now())} ${id} ${name}(${arg}) from ${stack}`)
+          return original.apply(this, args)
+        }
+      }
+      const on = m.on as (e: string, f: () => void) => void
+      for (const e of ['style.load', 'webglcontextlost', 'webglcontextrestored', 'remove']) {
+        on.call(m, e, () => log.push(`${Math.round(performance.now())} ${id} ${e} layers=${count()}`))
+      }
+    }, 2)
     new MutationObserver((records) => {
       for (const record of records) {
         for (const node of [...record.addedNodes].map((n) => ['add', n] as const).concat([...record.removedNodes].map((n) => ['remove', n] as const))) {
