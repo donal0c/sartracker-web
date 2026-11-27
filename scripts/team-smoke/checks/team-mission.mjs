@@ -580,8 +580,8 @@ export default [
       const measured = (await app.page.getByTestId('measurement-count').innerText({ timeout: 10_000 }).catch((error) => {
         throw new NotTested(`the Measure count could not be read after relaunch: ${error.message.split('\n')[0]}`)
       })).trim()
-      await app.shot('measure-after-relaunch')
       if (measured !== '1') findings.push(`Measure after relaunch recorded ${measured} measurements, expected 1`)
+      await app.shot('measure-after-relaunch')
       await app.page.getByTestId('drawing-toolbar-collapse').click().catch(() => {})
       await delay(500)
 
@@ -597,18 +597,22 @@ export default [
       await app.page.getByTestId('mission-replay-time').fill(localInput(missionStart + 24 * HOUR))
       await app.page.getByTestId('mission-replay-seek').click()
       await delay(8000)
-      // An error shown by Replay is a product result; a state that cannot be read without one is missing evidence.
-      const replayError = await app.page.getByTestId('mission-replay-error').innerText({ timeout: 2_000 }).catch(() => null)
-      const replayState = (await app.page.getByTestId('mission-replay-reconstructed-state').innerText({ timeout: 10_000 }).catch((error) => {
-        if (replayError !== null) return ''
+      // Wait for either outcome in one window: an error Replay shows is a product
+      // result; neither the error nor the state appearing is missing evidence.
+      await app.page.locator('[data-testid="mission-replay-error"], [data-testid="mission-replay-reconstructed-state"]').first()
+        .waitFor({ timeout: 10_000 }).catch((error) => {
+          throw new NotTested(`Replay showed neither its state nor an error: ${error.message.split('\n')[0]}`)
+        })
+      const replayError = await app.page.getByTestId('mission-replay-error').innerText({ timeout: 1_000 }).catch(() => null)
+      const replayState = replayError !== null ? '' : (await app.page.getByTestId('mission-replay-reconstructed-state').innerText({ timeout: 5_000 }).catch((error) => {
         throw new NotTested(`the Replay state could not be read: ${error.message.split('\n')[0]}`)
       })).replace(/\s+/gu, ' ')
+      if (replayError !== null || replayState === '') findings.push(`replay 24 h into the backfilled window failed: ${replayError ?? 'empty state'}`)
       const replayRecords = /(\d+) \/ (\d+) selected-time records read/u.exec(await bodyText(app.page))
       await app.shot('replay-day-1')
       const leftReplay = await returnReplayToLive(app.page)
       if (leftReplay !== 'live') findings.push(`Return to Live / now did not bring back the live map context (${leftReplay})`)
       await closeWorkspace(app.page)
-      if (replayError !== null || replayState === '') findings.push(`replay 24 h into the backfilled window failed: ${replayError ?? 'empty state'}`)
       // Replay folds evidence at max(fixTime, recorded_at), so history fetched by
       // the lookback backfill is not "known" at earlier replay times. Whether the
       // team expects tracks there is an open question (DON-293); report the count.
@@ -678,9 +682,9 @@ export default [
           if (error?.name === 'TimeoutError') return false
           throw new NotTested(`the archive reopen could not be watched: ${error?.message?.split('\n')[0] ?? error}`)
         })
+      if (!reopened) findings.push('the archive did not reopen with its recovery code')
       await app.shot('reopened-with-recovery-code')
       await app.stop()
-      if (!reopened) findings.push('the archive did not reopen with its recovery code')
 
       const statuses = withStore(profile, (db) => Object.fromEntries(db.prepare('SELECT name, status FROM missions').all().map((row) => [row.name, row.status])))
       if (statuses[MISSION] !== 'finalized' || statuses['Yesterday Training'] !== 'finished') {
